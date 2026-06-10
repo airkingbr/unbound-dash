@@ -33,13 +33,15 @@
     font-family: "JetBrains Mono", "Fira Code", Consolas, "Courier New", monospace;
   }
   header {
-    height: 64px;
-    padding: 0 24px;
+    min-height: 64px;
+    padding: 12px 24px;
     border-bottom: 1px solid var(--border);
     background: var(--card);
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
   }
   .brand {
     display: flex;
@@ -134,12 +136,11 @@
   #login-screen .footer-note { color: var(--muted-2); font-size: 12px; margin-top: 24px; }
 
   .tabs {
-    display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 24px;
-    border-bottom: 1px solid var(--border); padding-bottom: 12px;
+    display: flex; gap: 8px; flex-wrap: wrap;
   }
   .tab-btn {
-    background: var(--card); color: var(--muted); border: 1px solid var(--border);
-    border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 500; cursor: pointer;
+    background: var(--card-2); color: var(--muted); border: 1px solid var(--border);
+    border-radius: 8px; padding: 7px 14px; font-size: 13px; font-weight: 500; cursor: pointer;
     transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
   }
   .tab-btn:hover { color: var(--text); border-color: var(--accent); }
@@ -180,16 +181,15 @@
       </div>
       <h1>unbound<span>-dash</span></h1>
     </div>
-    <button id="logout-btn">Sair</button>
-  </header>
-  <main>
     <div class="tabs">
       <button class="tab-btn active" data-tab="overview">Visao geral</button>
       <button class="tab-btn" data-tab="stats">Estatisticas</button>
       <button class="tab-btn" data-tab="top">Top consultas</button>
       <button class="tab-btn" data-tab="logs">Log</button>
     </div>
-
+    <button id="logout-btn">Sair</button>
+  </header>
+  <main>
     <div class="tab-content" id="tab-overview">
       <div class="grid" id="stat-cards"></div>
 
