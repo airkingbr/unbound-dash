@@ -117,6 +117,18 @@ if [ -z "$ADMIN_PASSWORD" ]; then
   if [ -f "$CONFIG_PATH" ]; then
     ADMIN_PASSWORD="$(grep -o '"admin_password": *"[^"]*"' "$CONFIG_PATH" | sed -E 's/.*"([^"]*)"$/\1/')"
   fi
+  if [ -z "$ADMIN_PASSWORD" ] && [ -r /dev/tty ]; then
+    read -r -s -p "    admin password (deixe em branco para gerar uma aleatoria): " ADMIN_PASSWORD < /dev/tty
+    echo
+    if [ -n "$ADMIN_PASSWORD" ]; then
+      read -r -s -p "    confirme a senha: " ADMIN_PASSWORD_CONFIRM < /dev/tty
+      echo
+      if [ "$ADMIN_PASSWORD" != "$ADMIN_PASSWORD_CONFIRM" ]; then
+        echo "as senhas nao coincidem" >&2
+        exit 1
+      fi
+    fi
+  fi
   if [ -z "$ADMIN_PASSWORD" ]; then
     ADMIN_PASSWORD="$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 20)"
     echo "    generated admin password: ${ADMIN_PASSWORD}"
