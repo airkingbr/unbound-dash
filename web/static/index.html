@@ -133,6 +133,18 @@
   #login-screen button { padding: 11px 16px; font-weight: 600; }
   #login-screen .footer-note { color: var(--muted-2); font-size: 12px; margin-top: 24px; }
 
+  .tabs {
+    display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 24px;
+    border-bottom: 1px solid var(--border); padding-bottom: 12px;
+  }
+  .tab-btn {
+    background: var(--card); color: var(--muted); border: 1px solid var(--border);
+    border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 500; cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  }
+  .tab-btn:hover { color: var(--text); border-color: var(--accent); }
+  .tab-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
   .hidden { display: none !important; }
   .error { color: var(--danger); font-size: 13px; }
 </style>
@@ -171,82 +183,97 @@
     <button id="logout-btn">Sair</button>
   </header>
   <main>
-    <div class="grid" id="stat-cards"></div>
-
-    <div class="panel">
-      <h2>Consultas por segundo</h2>
-      <canvas id="qps-chart" height="80"></canvas>
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="overview">Visao geral</button>
+      <button class="tab-btn" data-tab="stats">Estatisticas</button>
+      <button class="tab-btn" data-tab="top">Top consultas</button>
+      <button class="tab-btn" data-tab="logs">Log</button>
     </div>
 
-    <div class="two-col">
+    <div class="tab-content" id="tab-overview">
+      <div class="grid" id="stat-cards"></div>
+
       <div class="panel">
-        <h2>Tipos de consulta</h2>
-        <canvas id="qtype-chart" height="200"></canvas>
+        <h2>Consultas por segundo</h2>
+        <canvas id="qps-chart" height="80"></canvas>
       </div>
+
       <div class="panel">
-        <h2>Codigos de resposta</h2>
-        <canvas id="rcode-chart" height="200"></canvas>
+        <h2>Controle (unbound-control)</h2>
+        <div class="row">
+          <button data-cmd="reload">Reload</button>
+          <button data-cmd="status">Status</button>
+          <button data-cmd="dump_cache">Dump cache</button>
+          <button data-cmd="flush_requestlist">Flush request list</button>
+          <button data-cmd="flush_bogus" class="danger">Flush bogus</button>
+          <button data-cmd="flush_negative" class="danger">Flush negative</button>
+        </div>
+        <div class="row">
+          <input type="text" id="flush-name" placeholder="dominio (ex: exemplo.com)">
+          <button data-cmd="flush" data-args="flush-name">Flush nome</button>
+          <button data-cmd="flush_zone" data-args="flush-name" class="danger">Flush zona</button>
+        </div>
+        <div class="row">
+          <input type="text" id="flush-type-name" placeholder="dominio">
+          <input type="text" id="flush-type-type" placeholder="tipo (ex: AAAA)">
+          <button data-cmd="flush_type" data-args="flush-type-name,flush-type-type">Flush tipo</button>
+        </div>
+        <div class="row">
+          <input type="text" id="flush-infra-ip" placeholder="IP (ou 'all')">
+          <button data-cmd="flush_infra" data-args="flush-infra-ip">Flush infra</button>
+        </div>
+        <div class="row">
+          <input type="text" id="verbosity-level" placeholder="nivel (0-5)">
+          <button data-cmd="verbosity" data-args="verbosity-level">Set verbosity</button>
+        </div>
+        <pre id="control-output">Saida dos comandos aparece aqui.</pre>
       </div>
     </div>
 
-    <div class="grid" id="memory-cards"></div>
-
-    <div class="two-col">
-      <div class="panel">
-        <h2>Zonas mais consultadas</h2>
-        <table>
-          <thead><tr><th>Dominio</th><th class="num">Consultas</th></tr></thead>
-          <tbody id="top-domains-body"><tr><td colspan="2">Carregando...</td></tr></tbody>
-        </table>
-        <div class="hint" id="top-domains-since"></div>
+    <div class="tab-content hidden" id="tab-stats">
+      <div class="two-col">
+        <div class="panel">
+          <h2>Tipos de consulta</h2>
+          <canvas id="qtype-chart" height="200"></canvas>
+        </div>
+        <div class="panel">
+          <h2>Codigos de resposta</h2>
+          <canvas id="rcode-chart" height="200"></canvas>
+        </div>
       </div>
-      <div class="panel">
-        <h2>IPs que mais resolvem nomes</h2>
-        <table>
-          <thead><tr><th>Endereco IP</th><th class="num">Consultas</th></tr></thead>
-          <tbody id="top-clients-body"><tr><td colspan="2">Carregando...</td></tr></tbody>
-        </table>
-        <div class="hint" id="top-clients-since"></div>
+
+      <div class="grid" id="memory-cards"></div>
+    </div>
+
+    <div class="tab-content hidden" id="tab-top">
+      <div class="two-col">
+        <div class="panel">
+          <h2>Zonas mais consultadas</h2>
+          <table>
+            <thead><tr><th>Dominio</th><th class="num">Consultas</th></tr></thead>
+            <tbody id="top-domains-body"><tr><td colspan="2">Carregando...</td></tr></tbody>
+          </table>
+          <div class="hint" id="top-domains-since"></div>
+        </div>
+        <div class="panel">
+          <h2>IPs que mais resolvem nomes</h2>
+          <table>
+            <thead><tr><th>Endereco IP</th><th class="num">Consultas</th></tr></thead>
+            <tbody id="top-clients-body"><tr><td colspan="2">Carregando...</td></tr></tbody>
+          </table>
+          <div class="hint" id="top-clients-since"></div>
+        </div>
       </div>
     </div>
 
-    <div class="panel">
-      <h2>Log do Unbound</h2>
-      <div class="row">
-        <button id="logs-refresh-btn">Atualizar</button>
+    <div class="tab-content hidden" id="tab-logs">
+      <div class="panel">
+        <h2>Log do Unbound</h2>
+        <div class="row">
+          <button id="logs-refresh-btn">Atualizar</button>
+        </div>
+        <pre id="logs-output">Clique em "Atualizar" para carregar o log.</pre>
       </div>
-      <pre id="logs-output">Clique em "Atualizar" para carregar o log.</pre>
-    </div>
-
-    <div class="panel">
-      <h2>Controle (unbound-control)</h2>
-      <div class="row">
-        <button data-cmd="reload">Reload</button>
-        <button data-cmd="status">Status</button>
-        <button data-cmd="dump_cache">Dump cache</button>
-        <button data-cmd="flush_requestlist">Flush request list</button>
-        <button data-cmd="flush_bogus" class="danger">Flush bogus</button>
-        <button data-cmd="flush_negative" class="danger">Flush negative</button>
-      </div>
-      <div class="row">
-        <input type="text" id="flush-name" placeholder="dominio (ex: exemplo.com)">
-        <button data-cmd="flush" data-args="flush-name">Flush nome</button>
-        <button data-cmd="flush_zone" data-args="flush-name" class="danger">Flush zona</button>
-      </div>
-      <div class="row">
-        <input type="text" id="flush-type-name" placeholder="dominio">
-        <input type="text" id="flush-type-type" placeholder="tipo (ex: AAAA)">
-        <button data-cmd="flush_type" data-args="flush-type-name,flush-type-type">Flush tipo</button>
-      </div>
-      <div class="row">
-        <input type="text" id="flush-infra-ip" placeholder="IP (ou 'all')">
-        <button data-cmd="flush_infra" data-args="flush-infra-ip">Flush infra</button>
-      </div>
-      <div class="row">
-        <input type="text" id="verbosity-level" placeholder="nivel (0-5)">
-        <button data-cmd="verbosity" data-args="verbosity-level">Set verbosity</button>
-      </div>
-      <pre id="control-output">Saida dos comandos aparece aqui.</pre>
     </div>
   </main>
 </div>
@@ -306,6 +333,20 @@ loginForm.addEventListener('submit', async (e) => {
 document.getElementById('logout-btn').addEventListener('click', async () => {
   await api('/api/logout', { method: 'POST' });
   showLogin();
+});
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+    btn.classList.add('active');
+    document.getElementById(`tab-${btn.dataset.tab}`).classList.remove('hidden');
+    if (btn.dataset.tab === 'overview' && qpsChart) qpsChart.resize();
+    if (btn.dataset.tab === 'stats') {
+      if (qtypeChart) qtypeChart.resize();
+      if (rcodeChart) rcodeChart.resize();
+    }
+  });
 });
 
 function initChart() {
