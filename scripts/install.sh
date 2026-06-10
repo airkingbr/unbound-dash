@@ -99,9 +99,9 @@ remote-control:
     control-interface: 127.0.0.1
     control-port: 8953
 EOF
-  if ! grep -q "include:.*unbound.conf.d" "$UNBOUND_CONF" 2>/dev/null; then
+  if ! grep -q "99-unbound-dash-control.conf" "$UNBOUND_CONF" 2>/dev/null; then
     cp "$UNBOUND_CONF" "${UNBOUND_CONF}.bak.$(date +%s)"
-    printf '\ninclude: "%s/*.conf"\n' "$CONF_D" >> "$UNBOUND_CONF"
+    printf '\ninclude: "%s/99-unbound-dash-control.conf"\n' "$CONF_D" >> "$UNBOUND_CONF"
   fi
   unbound-control-setup
   systemctl restart unbound
@@ -117,9 +117,9 @@ if [ ! -f "${CONF_D}/99-unbound-dash-querylog.conf" ]; then
 server:
     log-queries: yes
 EOF
-  if ! grep -q "include:.*unbound.conf.d" "$UNBOUND_CONF" 2>/dev/null; then
+  if ! grep -q "99-unbound-dash-querylog.conf" "$UNBOUND_CONF" 2>/dev/null; then
     cp "$UNBOUND_CONF" "${UNBOUND_CONF}.bak.$(date +%s)"
-    printf '\ninclude: "%s/*.conf"\n' "$CONF_D" >> "$UNBOUND_CONF"
+    printf '\ninclude: "%s/99-unbound-dash-querylog.conf"\n' "$CONF_D" >> "$UNBOUND_CONF"
   fi
   unbound-control set_option log-queries: yes >/dev/null 2>&1 || true
 fi
@@ -141,6 +141,16 @@ ${UNBOUND_LOG_FILE} {
     copytruncate
 }
 EOF
+
+echo "==> Setting up domain blocklist (anatel-blocklist.conf)"
+BLOCKLIST_FILE="${CONF_D}/anatel-blocklist.conf"
+if [ ! -f "$BLOCKLIST_FILE" ]; then
+  printf 'server:\n' > "$BLOCKLIST_FILE"
+fi
+if ! grep -q "anatel-blocklist.conf" "$UNBOUND_CONF" 2>/dev/null; then
+  cp "$UNBOUND_CONF" "${UNBOUND_CONF}.bak.$(date +%s)"
+  printf '\ninclude: "%s"\n' "$BLOCKLIST_FILE" >> "$UNBOUND_CONF"
+fi
 
 echo "==> Writing config"
 mkdir -p /etc/unbound-dash
@@ -176,6 +186,7 @@ cat > "$CONFIG_PATH" <<EOF
   "unbound_control_bin": "${UNBOUND_CONTROL_BIN}",
   "unbound_conf": "${UNBOUND_CONF}",
   "unbound_log_file": "${UNBOUND_LOG_FILE}",
+  "blocklist_file": "${BLOCKLIST_FILE}",
   "admin_password": "${ADMIN_PASSWORD}"
 }
 EOF

@@ -10,8 +10,10 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/airkingbr/unbound-dash/internal/auth"
+	"github.com/airkingbr/unbound-dash/internal/blocklist"
 	"github.com/airkingbr/unbound-dash/internal/config"
 	"github.com/airkingbr/unbound-dash/internal/querylog"
 	"github.com/airkingbr/unbound-dash/internal/unboundctl"
@@ -45,6 +47,9 @@ func (s *Server) Routes() http.Handler {
 	protected.HandleFunc("GET /api/top-clients", s.handleTopClients)
 	protected.HandleFunc("GET /api/logs", s.handleLogs)
 	protected.HandleFunc("GET /api/logs/stream", s.handleLogStream)
+	protected.HandleFunc("GET /api/blocklist", s.handleListBlocklist)
+	protected.HandleFunc("POST /api/blocklist", s.handleAddBlocklist)
+	protected.HandleFunc("DELETE /api/blocklist/{domain}", s.handleDeleteBlocklist)
 	protected.HandleFunc("POST /api/control/{command}", s.handleControl)
 
 	mux.Handle("/api/", auth.Middleware(s.cfg.SessionSecret)(protected))
@@ -195,6 +200,105 @@ func (s *Server) handleLogStream(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		}
+	}
+}
+
+func (s *Server) handleListBlocklist(w http.ResponseWriter, _ *http.Request) {
+	entries, err := blocklist.Load(s.cfg.BlocklistFile)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": entries})
+}
+
+func (s *Server) handleAddBlocklist(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Domain string `json:"domain"`
+		Origem string `json:"origem"`
+		Fonte  string `json:"fonte"`
+		Data   string `json:"data"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	domain := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(req.Domain), "."))
+	if !blocklist.ValidDomain(domain) {
+		writeError(w, http.StatusBadRequest, "dominio invalido")
+		return
+	}
+	req.Origem = strings.TrimSpace(req.Origem)
+	if req.Origem == "" {
+		writeError(w, http.StatusBadRequest, "origem e obrigatoria")
+		return
+	}
+	req.Fonte = strings.TrimSpace(req.Fonte)
+	req.Data = strings.TrimSpace(req.Data)
+	if !blocklist.ValidMeta(req.Origem) || !blocklist.ValidMeta(req.Fonte) || !blocklist.ValidMeta(req.Data) {
+		writeError(w, http.StatusBadRequest, "campos nao podem conter '#' ou quebras de linha")
+		return
+	}
+	if req.Data == "" {
+		req.Data = time.Now().Format("2006-01-02")
+	}
+
+	entries, err := blocklist.Load(s.cfg.BlocklistFile)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	for _, e := range entries {
+		if e.Domain == domain {
+			writeError(w, http.StatusConflict, "dominio ja esta na lista de bloqueios")
+			return
+		}
+	}
+	entries = append(entries, blocklist.Entry{Domain: domain, Origem: req.Origem, Fonte: req.Fonte, Data: req.Data})
+
+	if err := blocklist.Save(s.cfg.BlocklistFile, entries); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.reloadUnbound()
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleDeleteBlocklist(w http.ResponseWriter, r *http.Request) {
+	domain := strings.ToLower(strings.TrimSuffix(r.PathValue("domain"), "."))
+
+	entries, err := blocklist.Load(s.cfg.BlocklistFile)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	out := entries[:0]
+	found := false
+	for _, e := range entries {
+		if e.Domain == domain {
+			found = true
+			continue
+		}
+		out = append(out, e)
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "dominio nao encontrado na lista de bloqueios")
+		return
+	}
+
+	if err := blocklist.Save(s.cfg.BlocklistFile, out); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.reloadUnbound()
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) reloadUnbound() {
+	if _, err := unboundctl.RunControl(s.client, "reload", nil); err != nil {
+		log.Printf("reload unbound after blocklist change: %v", err)
 	}
 }
 

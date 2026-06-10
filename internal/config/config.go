@@ -14,6 +14,7 @@ type Config struct {
 	UnboundControlBin string `json:"unbound_control_bin"`
 	UnboundConf       string `json:"unbound_conf"`
 	UnboundLogFile    string `json:"unbound_log_file"`
+	BlocklistFile     string `json:"blocklist_file"`
 	AdminPassword     string `json:"admin_password"`
 	SessionSecret     string `json:"session_secret"`
 }
@@ -24,6 +25,7 @@ func defaults() Config {
 		UnboundControlBin: "/usr/sbin/unbound-control",
 		UnboundConf:       "/etc/unbound/unbound.conf",
 		UnboundLogFile:    "/var/log/unbound/unbound.log",
+		BlocklistFile:     "/etc/unbound/unbound.conf.d/anatel-blocklist.conf",
 	}
 }
 

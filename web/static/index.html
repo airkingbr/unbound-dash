@@ -86,13 +86,18 @@
   button.danger { background: var(--danger); }
   button.danger:hover { background: var(--danger-hover); }
 
-  input[type=text], input[type=password] {
+  input[type=text], input[type=password], input[type=date] {
     background: var(--card-2); border: 1px solid var(--border); border-radius: 8px;
     padding: 9px 12px; color: var(--text); font-size: 13px;
   }
-  input[type=text]:focus, input[type=password]:focus {
+  input[type=text]:focus, input[type=password]:focus, input[type=date]:focus {
     outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft);
   }
+  input[type=date] { color-scheme: dark; }
+  table button.remove-btn {
+    background: var(--danger); padding: 5px 10px; font-size: 12px;
+  }
+  table button.remove-btn:hover { background: var(--danger-hover); }
   input::placeholder { color: var(--muted-2); }
 
   pre {
@@ -190,6 +195,7 @@
       <button class="tab-btn active" data-tab="overview">Visao geral</button>
       <button class="tab-btn" data-tab="stats">Estatisticas</button>
       <button class="tab-btn" data-tab="top">Top consultas</button>
+      <button class="tab-btn" data-tab="blocklist">Bloqueios</button>
       <button class="tab-btn" data-tab="logs">Log</button>
     </div>
     <button id="logout-btn">Sair</button>
@@ -268,6 +274,38 @@
           </table>
           <div class="hint" id="top-clients-since"></div>
         </div>
+      </div>
+    </div>
+
+    <div class="tab-content hidden" id="tab-blocklist">
+      <div class="panel">
+        <h2>Adicionar bloqueio</h2>
+        <form id="blocklist-form">
+          <div class="row">
+            <input type="text" id="blocklist-domain" placeholder="dominio (ex: exemplo.com)" required>
+            <input type="text" id="blocklist-origem" placeholder="origem (ex: anatel, ia-prosa)" required>
+            <input type="text" id="blocklist-fonte" placeholder="fonte (opcional)">
+            <input type="date" id="blocklist-data">
+            <button type="submit">Adicionar</button>
+          </div>
+          <div class="error hidden" id="blocklist-error"></div>
+        </form>
+      </div>
+
+      <div class="panel">
+        <h2>Dominios bloqueados</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Dominio</th>
+              <th>Origem</th>
+              <th>Fonte</th>
+              <th>Data</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="blocklist-body"><tr><td colspan="5">Carregando...</td></tr></tbody>
+        </table>
       </div>
     </div>
 
@@ -355,6 +393,9 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
       startLogStream();
     } else {
       stopLogStream();
+    }
+    if (btn.dataset.tab === 'blocklist') {
+      refreshBlocklist();
     }
   });
 });
@@ -567,6 +608,77 @@ async function refreshTopLists() {
       `<tr><td colspan="2">Erro: ${err.message}</td></tr>`;
   }
 }
+
+function escapeHtml(s) {
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+async function refreshBlocklist() {
+  const body = document.getElementById('blocklist-body');
+  body.innerHTML = '<tr><td colspan="5">Carregando...</td></tr>';
+  try {
+    const res = await api('/api/blocklist');
+    const items = res.items || [];
+    if (items.length === 0) {
+      body.innerHTML = '<tr><td colspan="5">Nenhum dominio bloqueado.</td></tr>';
+      return;
+    }
+    body.innerHTML = '';
+    for (const { domain, origem, fonte, data } of items) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${escapeHtml(domain)}</td>
+        <td>${escapeHtml(origem || '-')}</td>
+        <td>${escapeHtml(fonte || '-')}</td>
+        <td>${escapeHtml(data || '-')}</td>
+        <td><button class="remove-btn" data-domain="${escapeHtml(domain)}">Remover</button></td>
+      `;
+      body.appendChild(tr);
+    }
+  } catch (err) {
+    body.innerHTML = `<tr><td colspan="5">Erro: ${err.message}</td></tr>`;
+  }
+}
+
+document.getElementById('blocklist-body').addEventListener('click', async (e) => {
+  const btn = e.target.closest('.remove-btn');
+  if (!btn) return;
+  const domain = btn.dataset.domain;
+  if (!confirm(`Remover o bloqueio de "${domain}"?`)) return;
+  btn.disabled = true;
+  try {
+    await api(`/api/blocklist/${encodeURIComponent(domain)}`, { method: 'DELETE' });
+    refreshBlocklist();
+  } catch (err) {
+    alert('Erro: ' + err.message);
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('blocklist-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errorBox = document.getElementById('blocklist-error');
+  errorBox.classList.add('hidden');
+
+  const domain = document.getElementById('blocklist-domain').value.trim();
+  const origem = document.getElementById('blocklist-origem').value.trim();
+  const fonte = document.getElementById('blocklist-fonte').value.trim();
+  const data = document.getElementById('blocklist-data').value;
+
+  try {
+    await api('/api/blocklist', {
+      method: 'POST',
+      body: JSON.stringify({ domain, origem, fonte, data }),
+    });
+    document.getElementById('blocklist-form').reset();
+    refreshBlocklist();
+  } catch (err) {
+    errorBox.textContent = 'Erro: ' + err.message;
+    errorBox.classList.remove('hidden');
+  }
+});
 
 const MAX_LOG_LINES = 300;
 const LOG_FLUSH_INTERVAL = 500;
