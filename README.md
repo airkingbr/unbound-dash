@@ -46,6 +46,36 @@ Por padrão a interface fica disponível em `http://SEU_SERVIDOR:8080`.
 curl -fsSL https://raw.githubusercontent.com/airkingbr/unbound-dash/main/scripts/install.sh | sudo bash -s -- -p "minha-senha" -l ":8080"
 ```
 
+- `-v VERSION` — versão da release a baixar (padrão: `latest`)
+- `-f BINARIO_LOCAL` — instala a partir de um binário local em vez de baixar uma release
+- `-p SENHA` — senha de admin do dashboard (gerada automaticamente se omitida)
+- `-l ENDERECO` — endereço/porta de escuta (padrão: `:8080`; ignorado se `-d` for usado)
+- `-d DOMINIO` — habilita HTTPS automaticamente (veja abaixo)
+- `-e EMAIL` — e-mail para avisos de renovação do Let's Encrypt (opcional)
+
+### HTTPS automático (Let's Encrypt)
+
+Se o domínio já estiver apontando para o IP do servidor (registro A/AAAA),
+basta passar `-d`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/airkingbr/unbound-dash/main/scripts/install.sh \
+  | sudo bash -s -- -d dash.exemplo.com.br -e voce@exemplo.com.br
+```
+
+Isso faz o instalador:
+
+1. Configurar o `unbound-dash` para escutar apenas em `127.0.0.1:8080`
+2. Instalar e configurar o **nginx** como proxy reverso (incluindo suporte ao
+   log ao vivo via SSE)
+3. Obter um certificado **Let's Encrypt** com `certbot` (plugin nginx),
+   configurando HTTPS e redirecionamento de HTTP para HTTPS automaticamente
+4. Agendar a renovação automática do certificado em
+   `/etc/cron.d/certbot-renew` (roda 2x ao dia, recarregando o nginx após
+   renovar)
+
+Após a instalação, o dashboard fica disponível em `https://SEU_DOMINIO`.
+
 ## Desenvolvimento
 
 ```bash
