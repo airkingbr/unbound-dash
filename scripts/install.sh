@@ -59,6 +59,11 @@ echo "==> Installing unbound-dash binary"
 if [ -n "$LOCAL_BINARY" ]; then
   install -m 0755 "$LOCAL_BINARY" "$BIN_PATH"
 else
+  if ! command -v jq >/dev/null 2>&1; then
+    apt-get update -qq
+    apt-get install -y jq
+  fi
+
   CURL_AUTH=()
   if [ -n "${GITHUB_TOKEN:-}" ]; then
     CURL_AUTH=(-H "Authorization: token ${GITHUB_TOKEN}")
@@ -71,11 +76,10 @@ else
   fi
 
   ASSET_NAME="unbound-dash_linux_${GOARCH}"
-  DOWNLOAD_URL="$(curl -fsSL "${CURL_AUTH[@]}" "$API_URL" \
-    | grep -o "\"browser_download_url\": *\"[^\"]*${ASSET_NAME}[^\"]*\"" \
-    | head -n1 | sed -E 's/.*"(https[^"]+)"/\1/')"
+  RELEASE_JSON="$(curl -fsSL "${CURL_AUTH[@]}" "$API_URL")"
+  ASSET_ID="$(echo "$RELEASE_JSON" | jq -r --arg name "$ASSET_NAME" '.assets[] | select(.name == $name) | .id' | head -n1)"
 
-  if [ -z "$DOWNLOAD_URL" ]; then
+  if [ -z "$ASSET_ID" ] || [ "$ASSET_ID" = "null" ]; then
     echo "could not find a release asset matching ${ASSET_NAME} (version: ${VERSION})" >&2
     echo "pass -f LOCAL_BINARY to install from a local build instead" >&2
     exit 1
@@ -83,7 +87,8 @@ else
 
   TMP_FILE="$(mktemp)"
   trap 'rm -f "$TMP_FILE"' EXIT
-  curl -fsSL "${CURL_AUTH[@]}" -o "$TMP_FILE" "$DOWNLOAD_URL"
+  curl -fsSL "${CURL_AUTH[@]}" -H "Accept: application/octet-stream" \
+    -o "$TMP_FILE" "https://api.github.com/repos/${REPO}/releases/assets/${ASSET_ID}"
   install -m 0755 "$TMP_FILE" "$BIN_PATH"
 fi
 
@@ -200,8 +205,13 @@ fi
 if [ -f "${SCRIPT_DIR}/unbound-dash.service" ]; then
   cp "${SCRIPT_DIR}/unbound-dash.service" /etc/systemd/system/unbound-dash.service
 else
-  curl -fsSL -o /etc/systemd/system/unbound-dash.service \
-    "https://raw.githubusercontent.com/${REPO}/main/scripts/unbound-dash.service"
+  CURL_AUTH=()
+  if [ -n "${GITHUB_TOKEN:-}" ]; then
+    CURL_AUTH=(-H "Authorization: token ${GITHUB_TOKEN}")
+  fi
+  curl -fsSL "${CURL_AUTH[@]}" -H "Accept: application/vnd.github.raw" \
+    -o /etc/systemd/system/unbound-dash.service \
+    "https://api.github.com/repos/${REPO}/contents/scripts/unbound-dash.service"
 fi
 
 systemctl daemon-reload
