@@ -46,6 +46,24 @@ Por padrão a interface fica disponível em `http://SEU_SERVIDOR:8080`.
 curl -fsSL https://raw.githubusercontent.com/airkingbr/unbound-dash/main/scripts/install.sh | sudo bash -s -- -p "minha-senha" -l ":8080"
 ```
 
+### Repositório privado
+
+Se o repositório for privado, são necessários dois ajustes: o `curl` que
+baixa o `install.sh` precisa de autenticação, e o `sudo` precisa repassar a
+variável `GITHUB_TOKEN` para o script (o `sudo` não herda o ambiente por
+padrão):
+
+```bash
+export GITHUB_TOKEN="ghp_xxxxxxxxxxxxxxxxxxxx"
+
+curl -fsSL -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+  https://raw.githubusercontent.com/airkingbr/unbound-dash/main/scripts/install.sh \
+  | sudo GITHUB_TOKEN="${GITHUB_TOKEN}" bash
+```
+
+O token precisa de permissão de leitura no repositório (`repo` para um PAT
+clássico, ou `Contents: Read-only` para um fine-grained token).
+
 ## Desenvolvimento
 
 ```bash
