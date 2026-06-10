@@ -61,7 +61,7 @@ if [ -n "$LOCAL_BINARY" ]; then
 else
   CURL_AUTH=()
   if [ -n "${GITHUB_TOKEN:-}" ]; then
-    CURL_AUTH=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
+    CURL_AUTH=(-H "Authorization: token ${GITHUB_TOKEN}")
   fi
 
   if [ "$VERSION" = "latest" ]; then
