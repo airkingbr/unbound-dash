@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>unbound-dash</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f5f5f4;
+    --card: #ffffff;
+    --text: #1c1c1a;
+    --muted: #6b6b66;
+    --border: #ddd9d0;
+    --accent: #1d9e75;
+    --danger: #d85a30;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1c1a;
+      --card: #2c2c2a;
+      --text: #f1efe8;
+      --muted: #b4b2a9;
+      --border: #444441;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  header h1 { font-size: 18px; font-weight: 500; margin: 0; }
+  main { padding: 24px; max-width: 1100px; margin: 0 auto; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .card .label { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .card .value { font-size: 22px; font-weight: 500; }
+  .panel { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 24px; }
+  .panel h2 { font-size: 16px; font-weight: 500; margin: 0 0 12px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+  button {
+    background: var(--accent); color: #04342c; border: none; border-radius: 6px;
+    padding: 8px 14px; font-size: 13px; cursor: pointer;
+  }
+  button.danger { background: var(--danger); color: #4a1b0c; }
+  button:hover { opacity: 0.85; }
+  input[type=text] {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 8px; color: var(--text); font-size: 13px;
+  }
+  pre {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 12px; font-size: 12px; overflow: auto; max-height: 300px; white-space: pre-wrap;
+  }
+  #login-screen {
+    height: 100vh; display: flex; align-items: center; justify-content: center;
+  }
+  #login-screen form {
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    padding: 24px; display: flex; flex-direction: column; gap: 12px; width: 280px;
+  }
+  .hidden { display: none; }
+  .error { color: var(--danger); font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div id="login-screen">
+  <form id="login-form">
+    <h2 style="margin:0;font-weight:500;">unbound-dash</h2>
+    <input type="password" id="login-password" placeholder="Senha" autofocus>
+    <button type="submit">Entrar</button>
+    <div class="error hidden" id="login-error">Senha invalida</div>
+  </form>
+</div>
+
+<div id="dashboard" class="hidden">
+  <header>
+    <h1>unbound-dash</h1>
+    <button id="logout-btn">Sair</button>
+  </header>
+  <main>
+    <div class="grid" id="stat-cards"></div>
+
+    <div class="panel">
+      <h2>Consultas por segundo</h2>
+      <canvas id="qps-chart" height="80"></canvas>
+    </div>
+
+    <div class="panel">
+      <h2>Controle (unbound-control)</h2>
+      <div class="row">
+        <button data-cmd="reload">Reload</button>
+        <button data-cmd="status">Status</button>
+        <button data-cmd="dump_cache">Dump cache</button>
+        <button data-cmd="flush_requestlist">Flush request list</button>
+        <button data-cmd="flush_bogus" class="danger">Flush bogus</button>
+        <button data-cmd="flush_negative" class="danger">Flush negative</button>
+      </div>
+      <div class="row">
+        <input type="text" id="flush-name" placeholder="dominio (ex: exemplo.com)">
+        <button data-cmd="flush" data-args="flush-name">Flush nome</button>
+        <button data-cmd="flush_zone" data-args="flush-name" class="danger">Flush zona</button>
+      </div>
+      <div class="row">
+        <input type="text" id="flush-type-name" placeholder="dominio">
+        <input type="text" id="flush-type-type" placeholder="tipo (ex: AAAA)">
+        <button data-cmd="flush_type" data-args="flush-type-name,flush-type-type">Flush tipo</button>
+      </div>
+      <div class="row">
+        <input type="text" id="flush-infra-ip" placeholder="IP (ou 'all')">
+        <button data-cmd="flush_infra" data-args="flush-infra-ip">Flush infra</button>
+      </div>
+      <div class="row">
+        <input type="text" id="verbosity-level" placeholder="nivel (0-5)">
+        <button data-cmd="verbosity" data-args="verbosity-level">Set verbosity</button>
+      </div>
+      <pre id="control-output">Saida dos comandos aparece aqui.</pre>
+    </div>
+  </main>
+</div>
+
+<script>
+const loginScreen = document.getElementById('login-screen');
+const dashboard = document.getElementById('dashboard');
+const loginForm = document.getElementById('login-form');
+const loginError = document.getElementById('login-error');
+
+let qpsChart;
+let lastStats = null;
+let lastTime = null;
+
+async function api(path, opts) {
+  const res = await fetch(path, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opts));
+  if (res.status === 401) {
+    showLogin();
+    throw new Error('unauthorized');
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || res.statusText);
+  }
+  return res.json();
+}
+
+function showLogin() {
+  loginScreen.classList.remove('hidden');
+  dashboard.classList.add('hidden');
+}
+
+function showDashboard() {
+  loginScreen.classList.add('hidden');
+  dashboard.classList.remove('hidden');
+  if (!qpsChart) initChart();
+  refreshStats();
+  setInterval(refreshStats, 5000);
+}
+
+loginForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  loginError.classList.add('hidden');
+  const password = document.getElementById('login-password').value;
+  try {
+    await api('/api/login', { method: 'POST', body: JSON.stringify({ password }) });
+    showDashboard();
+  } catch (err) {
+    loginError.classList.remove('hidden');
+  }
+});
+
+document.getElementById('logout-btn').addEventListener('click', async () => {
+  await api('/api/logout', { method: 'POST' });
+  showLogin();
+});
+
+function initChart() {
+  const ctx = document.getElementById('qps-chart');
+  qpsChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        { label: 'Queries/s', data: [], borderColor: '#1d9e75', tension: 0.3 },
+        { label: 'Cache hits/s', data: [], borderColor: '#378add', tension: 0.3 },
+      ],
+    },
+    options: {
+      animation: false,
+      scales: { y: { beginAtZero: true } },
+    },
+  });
+}
+
+const STAT_CARDS = [
+  { key: 'total.num.queries', label: 'Total de consultas' },
+  { key: 'total.num.cachehits', label: 'Cache hits' },
+  { key: 'total.num.cachemiss', label: 'Cache miss' },
+  { key: 'total.num.recursivereplies', label: 'Respostas recursivas' },
+  { key: 'total.recursion.time.avg', label: 'Tempo recursao (avg ms)' },
+  { key: 'total.requestlist.avg', label: 'Request list (avg)' },
+  { key: 'total.requestlist.max', label: 'Request list (max)' },
+  { key: 'mem.cache.rrset', label: 'Cache RRset (bytes)' },
+  { key: 'mem.cache.message', label: 'Cache mensagens (bytes)' },
+];
+
+function cacheHitRatio(stats) {
+  const hits = stats['total.num.cachehits'] || 0;
+  const total = stats['total.num.queries'] || 0;
+  if (total === 0) return 0;
+  return (hits / total) * 100;
+}
+
+function renderCards(stats) {
+  const container = document.getElementById('stat-cards');
+  container.innerHTML = '';
+
+  const ratio = cacheHitRatio(stats);
+  addCard(container, 'Cache hit ratio', ratio.toFixed(1) + '%');
+
+  for (const { key, label } of STAT_CARDS) {
+    if (stats[key] === undefined) continue;
+    addCard(container, label, formatNumber(stats[key]));
+  }
+}
+
+function addCard(container, label, value) {
+  const div = document.createElement('div');
+  div.className = 'card';
+  div.innerHTML = `<div class="label">${label}</div><div class="value">${value}</div>`;
+  container.appendChild(div);
+}
+
+function formatNumber(n) {
+  if (Number.isInteger(n)) return n.toLocaleString('pt-BR');
+  return n.toLocaleString('pt-BR', { maximumFractionDigits: 3 });
+}
+
+function updateChart(stats) {
+  const now = Date.now();
+  if (lastStats && lastTime) {
+    const dt = (now - lastTime) / 1000;
+    const dQueries = stats['total.num.queries'] - lastStats['total.num.queries'];
+    const dHits = stats['total.num.cachehits'] - lastStats['total.num.cachehits'];
+    const label = new Date(now).toLocaleTimeString('pt-BR');
+
+    qpsChart.data.labels.push(label);
+    qpsChart.data.datasets[0].data.push(Math.max(0, dQueries / dt));
+    qpsChart.data.datasets[1].data.push(Math.max(0, dHits / dt));
+
+    if (qpsChart.data.labels.length > 30) {
+      qpsChart.data.labels.shift();
+      qpsChart.data.datasets.forEach(ds => ds.data.shift());
+    }
+    qpsChart.update();
+  }
+  lastStats = stats;
+  lastTime = now;
+}
+
+async function refreshStats() {
+  try {
+    const stats = await api('/api/stats');
+    renderCards(stats);
+    updateChart(stats);
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+document.querySelectorAll('[data-cmd]').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const cmd = btn.dataset.cmd;
+    let args = [];
+    if (btn.dataset.args) {
+      args = btn.dataset.args.split(',').map(id => document.getElementById(id).value).filter(v => v !== '');
+    }
+    const out = document.getElementById('control-output');
+    out.textContent = 'Executando...';
+    try {
+      const res = await api(`/api/control/${cmd}`, { method: 'POST', body: JSON.stringify({ args }) });
+      out.textContent = res.output || '(sem saida)';
+    } catch (err) {
+      out.textContent = 'Erro: ' + err.message;
+    }
+  });
+});
+
+// Check if already authenticated
+api('/api/stats').then(showDashboard).catch(() => showLogin());
+</script>
+</body>
+</html>

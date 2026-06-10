@@ -1,0 +1,37 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Build
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p dist
+          go build -trimpath -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" \
+            -o dist/unbound-dash_linux_${GOARCH} ./cmd/unbound-dash
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/unbound-dash_linux_${{ matrix.goarch }}

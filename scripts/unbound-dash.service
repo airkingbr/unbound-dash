@@ -1,0 +1,16 @@
+[Unit]
+Description=unbound-dash - web dashboard for Unbound
+After=network.target unbound.service
+Wants=unbound.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/unbound-dash -config /etc/unbound-dash/config.json
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=yes
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
