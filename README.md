@@ -46,6 +46,11 @@ Por padrão a interface fica disponível em `http://SEU_SERVIDOR:8080`.
 curl -fsSL https://raw.githubusercontent.com/airkingbr/unbound-dash/main/scripts/install.sh | sudo bash -s -- -p "minha-senha" -l ":8080"
 ```
 
+- `-v VERSION` — versão da release a baixar (padrão: `latest`)
+- `-f BINARIO_LOCAL` — instala a partir de um binário local em vez de baixar uma release
+- `-p SENHA` — senha de admin do dashboard (gerada automaticamente se omitida)
+- `-l ENDERECO` — endereço/porta de escuta (padrão: `:8080`)
+
 ### Repositório privado
 
 Se o repositório for privado, são necessários dois ajustes: o `curl` que

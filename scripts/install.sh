@@ -43,6 +43,12 @@ if ! command -v unbound-control >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! command -v pdftotext >/dev/null 2>&1; then
+  echo "==> Installing poppler-utils (pdftotext, usado para importar oficios em PDF)"
+  apt-get update -qq
+  apt-get install -y poppler-utils
+fi
+
 ARCH="$(dpkg --print-architecture)"
 case "$ARCH" in
   amd64) GOARCH="amd64" ;;
@@ -184,6 +190,7 @@ if [ -z "$ADMIN_PASSWORD" ]; then
 fi
 
 UNBOUND_CONTROL_BIN="$(command -v unbound-control)"
+PDFTOTEXT_BIN="$(command -v pdftotext || echo pdftotext)"
 
 cat > "$CONFIG_PATH" <<EOF
 {
@@ -192,6 +199,7 @@ cat > "$CONFIG_PATH" <<EOF
   "unbound_conf": "${UNBOUND_CONF}",
   "unbound_log_file": "${UNBOUND_LOG_FILE}",
   "blocklist_file": "${BLOCKLIST_FILE}",
+  "pdftotext_bin": "${PDFTOTEXT_BIN}",
   "admin_password": "${ADMIN_PASSWORD}"
 }
 EOF

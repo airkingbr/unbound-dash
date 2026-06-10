@@ -50,7 +50,21 @@ func (s *Server) Routes() http.Handler {
 	protected.HandleFunc("GET /api/blocklist", s.handleListBlocklist)
 	protected.HandleFunc("POST /api/blocklist", s.handleAddBlocklist)
 	protected.HandleFunc("DELETE /api/blocklist/{domain}", s.handleDeleteBlocklist)
+	protected.HandleFunc("POST /api/blocklist/bulk-delete", s.handleBulkDeleteBlocklist)
+	protected.HandleFunc("POST /api/oficio/parse", s.handleOficioParse)
+	protected.HandleFunc("POST /api/oficio/apply", s.handleOficioApply)
 	protected.HandleFunc("POST /api/control/{command}", s.handleControl)
+	protected.HandleFunc("POST /api/dns/query", s.handleDNSQuery)
+	protected.HandleFunc("POST /api/dns/reverse", s.handleDNSReverse)
+	protected.HandleFunc("POST /api/dns/trace", s.handleDNSTrace)
+	protected.HandleFunc("POST /api/dns/compare", s.handleDNSCompare)
+	protected.HandleFunc("POST /api/dns/blocked", s.handleDNSBlocked)
+	protected.HandleFunc("POST /api/benchmark/cache", s.handleBenchmarkCache)
+	protected.HandleFunc("POST /api/benchmark/batch", s.handleBenchmarkBatch)
+	protected.HandleFunc("GET /api/benchmark/replay", s.handleBenchmarkReplay)
+	protected.HandleFunc("POST /api/benchmark/load", s.handleBenchmarkLoad)
+	protected.HandleFunc("GET /api/benchmark/histogram", s.handleBenchmarkHistogram)
+	protected.HandleFunc("POST /api/benchmark/compare", s.handleBenchmarkCompare)
 
 	mux.Handle("/api/", auth.Middleware(s.cfg.SessionSecret)(protected))
 
@@ -296,6 +310,50 @@ func (s *Server) handleDeleteBlocklist(w http.ResponseWriter, r *http.Request) {
 	s.reloadUnbound()
 	s.flushZone(domain)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// handleBulkDeleteBlocklist removes multiple domains from the blocklist in
+// one shot, reloading Unbound and flushing the entire cache once at the end.
+func (s *Server) handleBulkDeleteBlocklist(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Domains []string `json:"domains"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	toRemove := make(map[string]bool, len(req.Domains))
+	for _, raw := range req.Domains {
+		toRemove[strings.ToLower(strings.TrimSuffix(strings.TrimSpace(raw), "."))] = true
+	}
+
+	entries, err := blocklist.Load(s.cfg.BlocklistFile)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	out := entries[:0]
+	removed := []string{}
+	for _, e := range entries {
+		if toRemove[e.Domain] {
+			removed = append(removed, e.Domain)
+			continue
+		}
+		out = append(out, e)
+	}
+
+	if len(removed) > 0 {
+		if err := blocklist.Save(s.cfg.BlocklistFile, out); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		s.reloadUnbound()
+		s.flushZone(".")
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"removed": removed})
 }
 
 func (s *Server) reloadUnbound() {
