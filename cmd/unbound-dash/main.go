@@ -50,7 +50,7 @@ func main() {
 		}
 	}
 
-	server := api.New(cfg, client, static, tailer)
+	server := api.New(cfg, client, static, tailer, version)
 
 	log.Printf("unbound-dash listening on %s", cfg.ListenAddr)
 	if err := http.ListenAndServe(cfg.ListenAddr, server.Routes()); err != nil {

@@ -14,6 +14,7 @@ Esqueleto inicial:
 
 - [x] API HTTP (login com sessão, `/api/stats`, `/api/status`, `/api/control/{cmd}`)
 - [x] Frontend single-page (gráfico de QPS/cache hit, cards de estatísticas, painel de controle)
+- [x] Cards de status mostram versão e uptime do Unbound; rodapé mostra a versão do unbound-dash em execução
 - [x] Instalador (`scripts/install.sh`) + unit systemd
 - [x] Gerência de blocklist (`anatel-blocklist.conf`), com importação de ofícios em PDF
 - [x] Log do Unbound ao vivo (streaming)

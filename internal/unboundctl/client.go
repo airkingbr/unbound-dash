@@ -78,6 +78,35 @@ func (c *Client) Status() (string, error) {
 	return c.run("status")
 }
 
+// StatusInfo holds parsed fields from "unbound-control status".
+type StatusInfo struct {
+	Version       string `json:"version"`
+	UptimeSeconds int64  `json:"uptime_seconds"`
+	Output        string `json:"output"`
+}
+
+// ParseStatus parses the raw output of "unbound-control status",
+// extracting the Unbound version and uptime in seconds.
+func ParseStatus(out string) StatusInfo {
+	info := StatusInfo{Output: out}
+	scanner := bufio.NewScanner(strings.NewReader(out))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		switch {
+		case strings.HasPrefix(line, "version:"):
+			info.Version = strings.TrimSpace(strings.TrimPrefix(line, "version:"))
+		case strings.HasPrefix(line, "uptime:"):
+			fields := strings.Fields(strings.TrimPrefix(line, "uptime:"))
+			if len(fields) > 0 {
+				if secs, err := strconv.ParseInt(fields[0], 10, 64); err == nil {
+					info.UptimeSeconds = secs
+				}
+			}
+		}
+	}
+	return info
+}
+
 // controlArgSpec describes how many arguments a control command expects.
 type controlArgSpec struct {
 	min, max int

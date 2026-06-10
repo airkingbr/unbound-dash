@@ -25,12 +25,13 @@ type Server struct {
 	client   *unboundctl.Client
 	static   fs.FS
 	querylog *querylog.Tailer
+	version  string
 }
 
 // New creates a new API server. tailer may be nil if query log
 // aggregation is unavailable.
-func New(cfg config.Config, client *unboundctl.Client, static fs.FS, tailer *querylog.Tailer) *Server {
-	return &Server{cfg: cfg, client: client, static: static, querylog: tailer}
+func New(cfg config.Config, client *unboundctl.Client, static fs.FS, tailer *querylog.Tailer, version string) *Server {
+	return &Server{cfg: cfg, client: client, static: static, querylog: tailer, version: version}
 }
 
 // Routes builds the top-level HTTP handler.
@@ -123,7 +124,13 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"output": out})
+	info := unboundctl.ParseStatus(out)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"output":         info.Output,
+		"version":        info.Version,
+		"uptime_seconds": info.UptimeSeconds,
+		"dash_version":   s.version,
+	})
 }
 
 func (s *Server) handleControl(w http.ResponseWriter, r *http.Request) {

@@ -66,6 +66,7 @@
   .card {
     background: var(--card); border: 1px solid var(--border); border-radius: 12px;
     padding: 18px; min-width: 0; container-type: inline-size; box-sizing: border-box;
+    text-align: center;
   }
   .card .label {
     font-size: 11px; color: var(--muted); margin-bottom: 6px;
@@ -162,6 +163,7 @@
   #login-screen label { font-size: 13px; color: var(--muted); margin-bottom: -6px; }
   #login-screen button { padding: 11px 16px; font-weight: 600; }
   #login-screen .footer-note { color: var(--muted-2); font-size: 12px; margin-top: 24px; }
+  #dashboard .footer-note { color: var(--muted-2); font-size: 12px; text-align: center; padding: 0 24px 24px; }
 
   .tabs {
     display: flex; gap: 8px; flex-wrap: wrap;
@@ -539,6 +541,7 @@
       </div>
     </div>
   </main>
+  <div class="footer-note" id="dashboard-footer">unbound-dash &middot; monitoramento Unbound</div>
 </div>
 
 <script>
@@ -575,11 +578,12 @@ function showDashboard() {
   loginScreen.classList.add('hidden');
   dashboard.classList.remove('hidden');
   if (!qpsChart) initChart();
-  refreshBlocklistCount().then(refreshStats);
+  refreshBlocklistCount().then(() => refreshStatus().then(refreshStats));
   refreshTopLists();
   setInterval(refreshStats, 5000);
   setInterval(refreshTopLists, 15000);
   setInterval(refreshBlocklistCount, 15000);
+  setInterval(refreshStatus, 30000);
 }
 
 loginForm.addEventListener('submit', async (e) => {
@@ -735,6 +739,7 @@ function cacheHitRatio(stats) {
 }
 
 let blocklistCount = null;
+let unboundStatus = null;
 
 function renderCards(stats) {
   const container = document.getElementById('stat-cards');
@@ -750,6 +755,41 @@ function renderCards(stats) {
 
   if (blocklistCount !== null) {
     addCard(container, 'Dominios bloqueados', formatNumber(blocklistCount), 'yellow');
+  }
+
+  if (unboundStatus) {
+    if (unboundStatus.version) {
+      addCard(container, 'Versao do Unbound', unboundStatus.version);
+    }
+    if (unboundStatus.uptime_seconds !== undefined) {
+      addCard(container, 'Uptime do Unbound', formatUptime(unboundStatus.uptime_seconds));
+    }
+  }
+}
+
+function formatUptime(seconds) {
+  seconds = Math.floor(seconds);
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const parts = [];
+  if (days > 0) parts.push(`${days}d`);
+  if (hours > 0 || days > 0) parts.push(`${hours}h`);
+  parts.push(`${minutes}m`);
+  return parts.join(' ');
+}
+
+async function refreshStatus() {
+  try {
+    const status = await api('/api/status');
+    unboundStatus = status;
+    if (status.dash_version) {
+      const footer = document.getElementById('dashboard-footer');
+      footer.textContent = `unbound-dash ${status.dash_version} · monitoramento Unbound`;
+    }
+    if (lastStats) renderCards(lastStats);
+  } catch (err) {
+    console.error(err);
   }
 }
 
