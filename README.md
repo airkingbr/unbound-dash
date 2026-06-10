@@ -74,9 +74,20 @@ clássico, ou `Contents: Read-only` para um fine-grained token).
 
 ## Atualização
 
-Para atualizar uma instalação existente para a última release, use
-`scripts/update.sh`. Ele baixa o novo binário, faz backup do binário atual
-(`/usr/local/bin/unbound-dash.bak.<timestamp>`) e reinicia o serviço:
+O `install.sh` já instala `scripts/update.sh` em
+`/usr/local/bin/update-unbound-dash`. Para atualizar para a última release,
+basta rodar:
+
+```bash
+sudo update-unbound-dash
+```
+
+Ele baixa o novo binário, faz backup do binário atual
+(`/usr/local/bin/unbound-dash.bak.<timestamp>`) e reinicia o serviço. Em
+repositório privado, exporte `GITHUB_TOKEN` antes de rodar.
+
+Caso queira baixar `update.sh` manualmente (ex.: em um servidor instalado
+antes dessa versão), use:
 
 ```bash
 curl -fsSL -o update.sh https://raw.githubusercontent.com/airkingbr/unbound-dash/main/scripts/update.sh

@@ -225,6 +225,22 @@ fi
 systemctl daemon-reload
 systemctl enable --now unbound-dash
 
+echo "==> Installing update-unbound-dash"
+UPDATE_BIN="/usr/local/bin/update-unbound-dash"
+if [ -f "${SCRIPT_DIR}/update.sh" ]; then
+  install -m 0755 "${SCRIPT_DIR}/update.sh" "$UPDATE_BIN"
+else
+  CURL_AUTH=()
+  if [ -n "${GITHUB_TOKEN:-}" ]; then
+    CURL_AUTH=(-H "Authorization: token ${GITHUB_TOKEN}")
+  fi
+  curl -fsSL "${CURL_AUTH[@]}" -H "Accept: application/vnd.github.raw" \
+    -o "$UPDATE_BIN" \
+    "https://api.github.com/repos/${REPO}/contents/scripts/update.sh"
+  chmod 0755 "$UPDATE_BIN"
+fi
+
 echo "==> Done"
 echo "    unbound-dash is listening on ${LISTEN_ADDR}"
 echo "    config: ${CONFIG_PATH}"
+echo "    para atualizar: sudo update-unbound-dash"
