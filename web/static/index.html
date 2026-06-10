@@ -86,30 +86,19 @@
   button.danger { background: var(--danger); }
   button.danger:hover { background: var(--danger-hover); }
 
-  input[type=text], input[type=password], input[type=date], input[type=number], select {
+  input[type=text], input[type=password], input[type=date] {
     background: var(--card-2); border: 1px solid var(--border); border-radius: 8px;
     padding: 9px 12px; color: var(--text); font-size: 13px;
   }
-  input[type=text]:focus, input[type=password]:focus, input[type=date]:focus, input[type=number]:focus, select:focus {
+  input[type=text]:focus, input[type=password]:focus, input[type=date]:focus {
     outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft);
   }
   input[type=date] { color-scheme: dark; }
-  input[type=number] { width: 90px; }
   table button.remove-btn {
     background: var(--danger); padding: 5px 10px; font-size: 12px;
   }
   table button.remove-btn:hover { background: var(--danger-hover); }
   input::placeholder { color: var(--muted-2); }
-
-  textarea {
-    background: var(--card-2); border: 1px solid var(--border); border-radius: 8px;
-    padding: 9px 12px; color: var(--text); font-size: 12px; width: 100%;
-    font-family: "JetBrains Mono", Consolas, monospace; resize: vertical;
-  }
-  textarea:focus {
-    outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft);
-  }
-  input[type=file] { color: var(--muted); font-size: 13px; }
 
   pre {
     background: var(--card-2); border: 1px solid var(--border); border-radius: 8px;
@@ -207,8 +196,6 @@
       <button class="tab-btn" data-tab="stats">Estatisticas</button>
       <button class="tab-btn" data-tab="top">Top consultas</button>
       <button class="tab-btn" data-tab="blocklist">Bloqueios</button>
-      <button class="tab-btn" data-tab="dns">Testes DNS</button>
-      <button class="tab-btn" data-tab="benchmark">Benchmark</button>
       <button class="tab-btn" data-tab="logs">Log</button>
     </div>
     <button id="logout-btn">Sair</button>
@@ -292,30 +279,6 @@
 
     <div class="tab-content hidden" id="tab-blocklist">
       <div class="panel">
-        <h2>Importar oficio (PDF)</h2>
-        <div class="row">
-          <input type="file" id="oficio-file" accept="application/pdf">
-          <button id="oficio-parse-btn">Processar PDF</button>
-        </div>
-        <div class="error hidden" id="oficio-error"></div>
-        <div id="oficio-result" class="hidden">
-          <div class="row">
-            <input type="text" id="oficio-origem" placeholder="origem">
-            <input type="text" id="oficio-fonte" placeholder="fonte (opcional)">
-            <input type="date" id="oficio-data">
-          </div>
-          <div class="hint" id="oficio-count"></div>
-          <div class="row">
-            <textarea id="oficio-domains" rows="10"></textarea>
-          </div>
-          <div class="row">
-            <button id="oficio-apply-btn">Aplicar bloqueios</button>
-          </div>
-          <pre class="hidden" id="oficio-apply-output"></pre>
-        </div>
-      </div>
-
-      <div class="panel">
         <h2>Adicionar bloqueio</h2>
         <form id="blocklist-form">
           <div class="row">
@@ -331,14 +294,9 @@
 
       <div class="panel">
         <h2>Dominios bloqueados</h2>
-        <div class="row">
-          <input type="text" id="blocklist-search" placeholder="Buscar dominio, origem ou fonte...">
-          <button id="blocklist-bulk-delete-btn" disabled>Remover selecionados</button>
-        </div>
         <table>
           <thead>
             <tr>
-              <th><input type="checkbox" id="blocklist-select-all"></th>
               <th>Dominio</th>
               <th>Origem</th>
               <th>Fonte</th>
@@ -346,178 +304,7 @@
               <th></th>
             </tr>
           </thead>
-          <tbody id="blocklist-body"><tr><td colspan="6">Carregando...</td></tr></tbody>
-        </table>
-        <div class="row" id="blocklist-pagination"></div>
-      </div>
-    </div>
-
-    <div class="tab-content hidden" id="tab-dns">
-      <div class="panel">
-        <h2>Consulta DNS (dig)</h2>
-        <div class="row">
-          <input type="text" id="dns-query-name" placeholder="dominio (ex: exemplo.com)">
-          <select id="dns-query-type">
-            <option value="A">A</option>
-            <option value="AAAA">AAAA</option>
-            <option value="CNAME">CNAME</option>
-            <option value="MX">MX</option>
-            <option value="TXT">TXT</option>
-            <option value="NS">NS</option>
-            <option value="SOA">SOA</option>
-            <option value="CAA">CAA</option>
-            <option value="SRV">SRV</option>
-            <option value="ANY">ANY</option>
-          </select>
-          <input type="text" id="dns-query-server" placeholder="servidor (padrao: 127.0.0.1)">
-          <button id="dns-query-btn">Consultar</button>
-        </div>
-        <div class="error hidden" id="dns-query-error"></div>
-        <pre class="hidden" id="dns-query-output"></pre>
-      </div>
-
-      <div class="panel">
-        <h2>Verificar bloqueio</h2>
-        <div class="row">
-          <input type="text" id="dns-blocked-domain" placeholder="dominio (ex: exemplo.com)">
-          <button id="dns-blocked-btn">Verificar</button>
-        </div>
-        <div class="error hidden" id="dns-blocked-error"></div>
-        <pre class="hidden" id="dns-blocked-output"></pre>
-      </div>
-
-      <div class="panel">
-        <h2>Comparar resolvedores (local vs publicos)</h2>
-        <div class="row">
-          <input type="text" id="dns-compare-name" placeholder="dominio (ex: exemplo.com)">
-          <select id="dns-compare-type">
-            <option value="A">A</option>
-            <option value="AAAA">AAAA</option>
-            <option value="MX">MX</option>
-            <option value="TXT">TXT</option>
-            <option value="NS">NS</option>
-          </select>
-          <button id="dns-compare-btn">Comparar</button>
-        </div>
-        <div class="error hidden" id="dns-compare-error"></div>
-        <table class="hidden" id="dns-compare-table">
-          <thead><tr><th>Servidor</th><th>Status</th><th>Tempo (ms)</th><th>AD</th><th>Respostas</th></tr></thead>
-          <tbody id="dns-compare-body"></tbody>
-        </table>
-      </div>
-
-      <div class="panel">
-        <h2>Rastrear resolucao (dig +trace)</h2>
-        <div class="row">
-          <input type="text" id="dns-trace-name" placeholder="dominio (ex: exemplo.com)">
-          <select id="dns-trace-type">
-            <option value="A">A</option>
-            <option value="AAAA">AAAA</option>
-            <option value="MX">MX</option>
-            <option value="NS">NS</option>
-          </select>
-          <button id="dns-trace-btn">Rastrear</button>
-        </div>
-        <div class="error hidden" id="dns-trace-error"></div>
-        <pre class="hidden" id="dns-trace-output"></pre>
-      </div>
-
-      <div class="panel">
-        <h2>Lookup reverso (PTR)</h2>
-        <div class="row">
-          <input type="text" id="dns-reverse-ip" placeholder="endereco IP (ex: 8.8.8.8)">
-          <button id="dns-reverse-btn">Consultar</button>
-        </div>
-        <div class="error hidden" id="dns-reverse-error"></div>
-        <pre class="hidden" id="dns-reverse-output"></pre>
-      </div>
-    </div>
-
-    <div class="tab-content hidden" id="tab-benchmark">
-      <div class="panel">
-        <h2>Cache: frio vs quente</h2>
-        <div class="hint">Limpa o cache de cada dominio, mede a 1a consulta (resolucao recursiva completa) e a 2a (servida do cache).</div>
-        <div class="row">
-          <textarea id="bench-cache-domains" rows="3" placeholder="um dominio por linha (em branco = lista padrao)"></textarea>
-        </div>
-        <div class="row">
-          <button id="bench-cache-btn">Rodar teste</button>
-        </div>
-        <div class="error hidden" id="bench-cache-error"></div>
-        <table class="hidden" id="bench-cache-table">
-          <thead><tr><th>Dominio</th><th>Frio (ms)</th><th>Quente (ms)</th><th>Ganho</th></tr></thead>
-          <tbody id="bench-cache-body"></tbody>
-        </table>
-      </div>
-
-      <div class="panel">
-        <h2>Lote de dominios</h2>
-        <div class="row">
-          <textarea id="bench-batch-domains" rows="3" placeholder="um dominio por linha (em branco = lista padrao)"></textarea>
-        </div>
-        <div class="row">
-          <button id="bench-batch-btn">Rodar teste</button>
-        </div>
-        <div class="error hidden" id="bench-batch-error"></div>
-        <div class="hint" id="bench-batch-stats"></div>
-        <table class="hidden" id="bench-batch-table">
-          <thead><tr><th>Dominio</th><th>Status</th><th>Tempo (ms)</th></tr></thead>
-          <tbody id="bench-batch-body"></tbody>
-        </table>
-      </div>
-
-      <div class="panel">
-        <h2>Replay do top dominios consultados</h2>
-        <div class="row">
-          <input type="number" id="bench-replay-n" value="20" min="1" max="100">
-          <button id="bench-replay-btn">Rodar teste</button>
-        </div>
-        <div class="error hidden" id="bench-replay-error"></div>
-        <div class="hint" id="bench-replay-stats"></div>
-        <table class="hidden" id="bench-replay-table">
-          <thead><tr><th>Dominio</th><th>Status</th><th>Tempo (ms)</th></tr></thead>
-          <tbody id="bench-replay-body"></tbody>
-        </table>
-      </div>
-
-      <div class="panel">
-        <h2>Teste de carga (QPS)</h2>
-        <div class="row">
-          <input type="text" id="bench-load-domain" placeholder="dominio" value="google.com">
-          <input type="number" id="bench-load-concurrency" value="10" min="1" max="50" placeholder="concorrencia">
-          <input type="number" id="bench-load-total" value="200" min="1" max="5000" placeholder="total">
-          <button id="bench-load-btn">Rodar teste</button>
-        </div>
-        <div class="hint">Apos a 1a consulta o dominio fica em cache; este teste mede principalmente a capacidade de resposta do servidor sob carga.</div>
-        <div class="error hidden" id="bench-load-error"></div>
-        <pre class="hidden" id="bench-load-output"></pre>
-      </div>
-
-      <div class="panel">
-        <h2>Histograma de tempos de resposta (Unbound)</h2>
-        <div class="hint">Dados acumulados pelo proprio Unbound, sem gerar trafego adicional.</div>
-        <div class="row">
-          <button id="bench-hist-btn">Atualizar</button>
-        </div>
-        <div class="error hidden" id="bench-hist-error"></div>
-        <table class="hidden" id="bench-hist-table">
-          <thead><tr><th>Faixa</th><th>Consultas</th></tr></thead>
-          <tbody id="bench-hist-body"></tbody>
-        </table>
-      </div>
-
-      <div class="panel">
-        <h2>Comparar com resolvedores publicos</h2>
-        <div class="row">
-          <textarea id="bench-compare-domains" rows="3" placeholder="um dominio por linha (em branco = lista padrao)"></textarea>
-        </div>
-        <div class="row">
-          <button id="bench-compare-btn">Comparar</button>
-        </div>
-        <div class="error hidden" id="bench-compare-error"></div>
-        <table class="hidden" id="bench-compare-table">
-          <thead><tr><th>Resolvedor</th><th>Consultas</th><th>Erros</th><th>Min (ms)</th><th>Media (ms)</th><th>P50 (ms)</th><th>P95 (ms)</th><th>Max (ms)</th></tr></thead>
-          <tbody id="bench-compare-body"></tbody>
+          <tbody id="blocklist-body"><tr><td colspan="5">Carregando...</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -845,156 +632,32 @@ function escapeHtml(s) {
   return div.innerHTML;
 }
 
-const BLOCKLIST_PAGE_SIZE = 100;
-let blocklistItems = [];
-let blocklistFiltered = [];
-let blocklistPage = 1;
-let blocklistSelected = new Set();
-
 async function refreshBlocklist() {
   const body = document.getElementById('blocklist-body');
-  body.innerHTML = '<tr><td colspan="6">Carregando...</td></tr>';
+  body.innerHTML = '<tr><td colspan="5">Carregando...</td></tr>';
   try {
     const res = await api('/api/blocklist');
-    blocklistItems = res.items || [];
-    blocklistSelected.clear();
-    blocklistPage = 1;
-    applyBlocklistFilter();
+    const items = res.items || [];
+    if (items.length === 0) {
+      body.innerHTML = '<tr><td colspan="5">Nenhum dominio bloqueado.</td></tr>';
+      return;
+    }
+    body.innerHTML = '';
+    for (const { domain, origem, fonte, data } of items) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${escapeHtml(domain)}</td>
+        <td>${escapeHtml(origem || '-')}</td>
+        <td>${escapeHtml(fonte || '-')}</td>
+        <td>${escapeHtml(data || '-')}</td>
+        <td><button class="remove-btn" data-domain="${escapeHtml(domain)}">Remover</button></td>
+      `;
+      body.appendChild(tr);
+    }
   } catch (err) {
-    body.innerHTML = `<tr><td colspan="6">Erro: ${err.message}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="5">Erro: ${err.message}</td></tr>`;
   }
 }
-
-function applyBlocklistFilter() {
-  const term = document.getElementById('blocklist-search').value.trim().toLowerCase();
-  blocklistFiltered = !term ? blocklistItems : blocklistItems.filter(({ domain, origem, fonte }) =>
-    (domain || '').toLowerCase().includes(term) ||
-    (origem || '').toLowerCase().includes(term) ||
-    (fonte || '').toLowerCase().includes(term)
-  );
-  const totalPages = Math.max(1, Math.ceil(blocklistFiltered.length / BLOCKLIST_PAGE_SIZE));
-  if (blocklistPage > totalPages) blocklistPage = totalPages;
-  renderBlocklistPage();
-}
-
-function renderBlocklistPage() {
-  const body = document.getElementById('blocklist-body');
-  const pagination = document.getElementById('blocklist-pagination');
-
-  if (blocklistFiltered.length === 0) {
-    body.innerHTML = '<tr><td colspan="6">Nenhum dominio encontrado.</td></tr>';
-    pagination.innerHTML = '';
-    updateBulkDeleteBtn();
-    return;
-  }
-
-  const totalPages = Math.max(1, Math.ceil(blocklistFiltered.length / BLOCKLIST_PAGE_SIZE));
-  const start = (blocklistPage - 1) * BLOCKLIST_PAGE_SIZE;
-  const pageItems = blocklistFiltered.slice(start, start + BLOCKLIST_PAGE_SIZE);
-
-  body.innerHTML = '';
-  for (const { domain, origem, fonte, data } of pageItems) {
-    const tr = document.createElement('tr');
-    const checked = blocklistSelected.has(domain) ? 'checked' : '';
-    tr.innerHTML = `
-      <td><input type="checkbox" class="blocklist-row-check" data-domain="${escapeHtml(domain)}" ${checked}></td>
-      <td>${escapeHtml(domain)}</td>
-      <td>${escapeHtml(origem || '-')}</td>
-      <td>${escapeHtml(fonte || '-')}</td>
-      <td>${escapeHtml(data || '-')}</td>
-      <td><button class="remove-btn" data-domain="${escapeHtml(domain)}">Remover</button></td>
-    `;
-    body.appendChild(tr);
-  }
-
-  pagination.innerHTML = '';
-  if (totalPages > 1) {
-    const info = document.createElement('span');
-    info.className = 'hint';
-    info.textContent = `Pagina ${blocklistPage} de ${totalPages} (${blocklistFiltered.length} dominios)`;
-    pagination.appendChild(info);
-
-    const prevBtn = document.createElement('button');
-    prevBtn.textContent = 'Anterior';
-    prevBtn.disabled = blocklistPage <= 1;
-    prevBtn.addEventListener('click', () => { blocklistPage--; renderBlocklistPage(); });
-    pagination.appendChild(prevBtn);
-
-    const nextBtn = document.createElement('button');
-    nextBtn.textContent = 'Proxima';
-    nextBtn.disabled = blocklistPage >= totalPages;
-    nextBtn.addEventListener('click', () => { blocklistPage++; renderBlocklistPage(); });
-    pagination.appendChild(nextBtn);
-  } else {
-    const info = document.createElement('span');
-    info.className = 'hint';
-    info.textContent = `${blocklistFiltered.length} dominios`;
-    pagination.appendChild(info);
-  }
-
-  updateSelectAllCheckbox();
-  updateBulkDeleteBtn();
-}
-
-function updateSelectAllCheckbox() {
-  const selectAll = document.getElementById('blocklist-select-all');
-  const checks = document.querySelectorAll('.blocklist-row-check');
-  if (checks.length === 0) {
-    selectAll.checked = false;
-    selectAll.indeterminate = false;
-    return;
-  }
-  const checkedCount = Array.from(checks).filter(c => c.checked).length;
-  selectAll.checked = checkedCount === checks.length;
-  selectAll.indeterminate = checkedCount > 0 && checkedCount < checks.length;
-}
-
-function updateBulkDeleteBtn() {
-  document.getElementById('blocklist-bulk-delete-btn').disabled = blocklistSelected.size === 0;
-}
-
-document.getElementById('blocklist-search').addEventListener('input', () => {
-  blocklistPage = 1;
-  applyBlocklistFilter();
-});
-
-document.getElementById('blocklist-select-all').addEventListener('change', (e) => {
-  const checks = document.querySelectorAll('.blocklist-row-check');
-  for (const c of checks) {
-    c.checked = e.target.checked;
-    if (e.target.checked) blocklistSelected.add(c.dataset.domain);
-    else blocklistSelected.delete(c.dataset.domain);
-  }
-  updateBulkDeleteBtn();
-});
-
-document.getElementById('blocklist-body').addEventListener('change', (e) => {
-  const check = e.target.closest('.blocklist-row-check');
-  if (!check) return;
-  if (check.checked) blocklistSelected.add(check.dataset.domain);
-  else blocklistSelected.delete(check.dataset.domain);
-  updateSelectAllCheckbox();
-  updateBulkDeleteBtn();
-});
-
-document.getElementById('blocklist-bulk-delete-btn').addEventListener('click', async () => {
-  const domains = Array.from(blocklistSelected);
-  if (domains.length === 0) return;
-  if (!confirm(`Remover ${domains.length} dominio(s) selecionado(s)?`)) return;
-  const btn = document.getElementById('blocklist-bulk-delete-btn');
-  btn.disabled = true;
-  try {
-    await api('/api/blocklist/bulk-delete', {
-      method: 'POST',
-      body: JSON.stringify({ domains }),
-    });
-    refreshBlocklist();
-    refreshBlocklistCount();
-  } catch (err) {
-    alert('Erro: ' + err.message);
-    btn.disabled = false;
-  }
-});
 
 document.getElementById('blocklist-body').addEventListener('click', async (e) => {
   const btn = e.target.closest('.remove-btn');
@@ -1033,86 +696,6 @@ document.getElementById('blocklist-form').addEventListener('submit', async (e) =
   } catch (err) {
     errorBox.textContent = 'Erro: ' + err.message;
     errorBox.classList.remove('hidden');
-  }
-});
-
-document.getElementById('oficio-parse-btn').addEventListener('click', async () => {
-  const fileInput = document.getElementById('oficio-file');
-  const errorBox = document.getElementById('oficio-error');
-  errorBox.classList.add('hidden');
-
-  if (!fileInput.files.length) {
-    errorBox.textContent = 'Selecione um arquivo PDF.';
-    errorBox.classList.remove('hidden');
-    return;
-  }
-
-  const formData = new FormData();
-  formData.append('file', fileInput.files[0]);
-
-  const btn = document.getElementById('oficio-parse-btn');
-  btn.disabled = true;
-  btn.textContent = 'Processando...';
-  try {
-    const res = await fetch('/api/oficio/parse', { method: 'POST', body: formData });
-    if (res.status === 401) {
-      showLogin();
-      return;
-    }
-    const body = await res.json();
-    if (!res.ok) throw new Error(body.error || res.statusText);
-
-    const domains = body.domains || [];
-    document.getElementById('oficio-origem').value = body.origem || '';
-    document.getElementById('oficio-fonte').value = body.fonte || '';
-    document.getElementById('oficio-data').value = body.data || '';
-    document.getElementById('oficio-domains').value = domains.join('\n');
-    document.getElementById('oficio-count').textContent = `${domains.length} dominios encontrados`;
-    document.getElementById('oficio-apply-output').classList.add('hidden');
-    document.getElementById('oficio-result').classList.remove('hidden');
-  } catch (err) {
-    errorBox.textContent = 'Erro: ' + err.message;
-    errorBox.classList.remove('hidden');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Processar PDF';
-  }
-});
-
-document.getElementById('oficio-apply-btn').addEventListener('click', async () => {
-  const errorBox = document.getElementById('oficio-error');
-  errorBox.classList.add('hidden');
-
-  const origem = document.getElementById('oficio-origem').value.trim();
-  const fonte = document.getElementById('oficio-fonte').value.trim();
-  const data = document.getElementById('oficio-data').value;
-  const domains = document.getElementById('oficio-domains').value
-    .split('\n').map(s => s.trim()).filter(Boolean);
-
-  const btn = document.getElementById('oficio-apply-btn');
-  btn.disabled = true;
-  btn.textContent = 'Aplicando...';
-  try {
-    const res = await api('/api/oficio/apply', {
-      method: 'POST',
-      body: JSON.stringify({ domains, origem, fonte, data }),
-    });
-    const added = res.added || [];
-    const skipped = res.skipped || [];
-    const invalid = res.invalid || [];
-    let text = `Adicionados: ${added.length}\nJa existiam: ${skipped.length}\nInvalidos: ${invalid.length}`;
-    if (invalid.length) text += '\n  ' + invalid.join('\n  ');
-    const out = document.getElementById('oficio-apply-output');
-    out.textContent = text;
-    out.classList.remove('hidden');
-    refreshBlocklist();
-    refreshBlocklistCount();
-  } catch (err) {
-    errorBox.textContent = 'Erro: ' + err.message;
-    errorBox.classList.remove('hidden');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Aplicar bloqueios';
   }
 });
 
@@ -1199,381 +782,6 @@ document.querySelectorAll('[data-cmd]').forEach(btn => {
       out.textContent = 'Erro: ' + err.message;
     }
   });
-});
-
-// ----- Testes DNS -----
-
-function fmtMs(v) {
-  return (typeof v === 'number') ? v.toFixed(2) : '-';
-}
-
-function formatDNSResult(res) {
-  const lines = [];
-  lines.push(`Servidor: ${res.server}`);
-  lines.push(`Nome: ${res.name}`);
-  lines.push(`Tipo: ${res.type}`);
-  lines.push(`Status: ${res.status}`);
-  if (res.error) lines.push(`Erro: ${res.error}`);
-  lines.push(`Tempo: ${fmtMs(res.duration_ms)} ms`);
-  lines.push(`DNSSEC (AD): ${res.authentic ? 'sim' : 'nao'}`);
-  if (res.truncated) lines.push('Truncado: sim');
-  lines.push('');
-  lines.push('Respostas:');
-  if (res.answers && res.answers.length) {
-    for (const a of res.answers) lines.push('  ' + a);
-  } else {
-    lines.push('  (nenhuma)');
-  }
-  if (res.authorities && res.authorities.length) {
-    lines.push('');
-    lines.push('Autoridade:');
-    for (const a of res.authorities) lines.push('  ' + a);
-  }
-  return lines.join('\n');
-}
-
-async function runSimpleAction({ btn, errorBox, output, fn }) {
-  errorBox.classList.add('hidden');
-  output.classList.add('hidden');
-  btn.disabled = true;
-  try {
-    output.textContent = await fn();
-    output.classList.remove('hidden');
-  } catch (err) {
-    errorBox.textContent = 'Erro: ' + err.message;
-    errorBox.classList.remove('hidden');
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-document.getElementById('dns-query-btn').addEventListener('click', () => {
-  const name = document.getElementById('dns-query-name').value.trim();
-  const type = document.getElementById('dns-query-type').value;
-  const server = document.getElementById('dns-query-server').value.trim();
-  const errorBox = document.getElementById('dns-query-error');
-  if (!name) {
-    errorBox.textContent = 'Informe um dominio.';
-    errorBox.classList.remove('hidden');
-    return;
-  }
-  runSimpleAction({
-    btn: document.getElementById('dns-query-btn'),
-    errorBox,
-    output: document.getElementById('dns-query-output'),
-    fn: async () => {
-      const res = await api('/api/dns/query', { method: 'POST', body: JSON.stringify({ name, type, server }) });
-      return formatDNSResult(res);
-    },
-  });
-});
-
-document.getElementById('dns-blocked-btn').addEventListener('click', () => {
-  const domain = document.getElementById('dns-blocked-domain').value.trim();
-  const errorBox = document.getElementById('dns-blocked-error');
-  if (!domain) {
-    errorBox.textContent = 'Informe um dominio.';
-    errorBox.classList.remove('hidden');
-    return;
-  }
-  runSimpleAction({
-    btn: document.getElementById('dns-blocked-btn'),
-    errorBox,
-    output: document.getElementById('dns-blocked-output'),
-    fn: async () => {
-      const res = await api('/api/dns/blocked', { method: 'POST', body: JSON.stringify({ domain }) });
-      const lines = [];
-      lines.push(`Dominio: ${res.domain}`);
-      lines.push(`Na lista de bloqueios: ${res.in_blocklist ? 'sim' : 'nao'}`);
-      if (res.blocked_by) lines.push(`Bloqueado pela regra: ${res.blocked_by}`);
-      lines.push('');
-      lines.push('Consulta ao resolvedor local:');
-      lines.push(formatDNSResult(res.query));
-      return lines.join('\n');
-    },
-  });
-});
-
-document.getElementById('dns-compare-btn').addEventListener('click', async () => {
-  const name = document.getElementById('dns-compare-name').value.trim();
-  const type = document.getElementById('dns-compare-type').value;
-  const errorBox = document.getElementById('dns-compare-error');
-  const table = document.getElementById('dns-compare-table');
-  errorBox.classList.add('hidden');
-  table.classList.add('hidden');
-  if (!name) {
-    errorBox.textContent = 'Informe um dominio.';
-    errorBox.classList.remove('hidden');
-    return;
-  }
-  const btn = document.getElementById('dns-compare-btn');
-  btn.disabled = true;
-  try {
-    const res = await api('/api/dns/compare', { method: 'POST', body: JSON.stringify({ name, type }) });
-    const body = document.getElementById('dns-compare-body');
-    body.innerHTML = '';
-    for (const item of res.items) {
-      const tr = document.createElement('tr');
-      const status = item.error ? `${item.status} (${item.error})` : item.status;
-      const answers = (item.answers || []).map(escapeHtml).join('<br>') || '-';
-      tr.innerHTML = `
-        <td>${escapeHtml(item.server)}</td>
-        <td>${escapeHtml(status)}</td>
-        <td>${fmtMs(item.duration_ms)}</td>
-        <td>${item.authentic ? 'sim' : 'nao'}</td>
-        <td>${answers}</td>
-      `;
-      body.appendChild(tr);
-    }
-    table.classList.remove('hidden');
-  } catch (err) {
-    errorBox.textContent = 'Erro: ' + err.message;
-    errorBox.classList.remove('hidden');
-  } finally {
-    btn.disabled = false;
-  }
-});
-
-document.getElementById('dns-trace-btn').addEventListener('click', () => {
-  const name = document.getElementById('dns-trace-name').value.trim();
-  const type = document.getElementById('dns-trace-type').value;
-  const errorBox = document.getElementById('dns-trace-error');
-  if (!name) {
-    errorBox.textContent = 'Informe um dominio.';
-    errorBox.classList.remove('hidden');
-    return;
-  }
-  runSimpleAction({
-    btn: document.getElementById('dns-trace-btn'),
-    errorBox,
-    output: document.getElementById('dns-trace-output'),
-    fn: async () => {
-      const res = await api('/api/dns/trace', { method: 'POST', body: JSON.stringify({ name, type }) });
-      const lines = [];
-      lines.push(`Nome: ${res.name}  Tipo: ${res.type}`);
-      if (res.error) lines.push(`Erro: ${res.error}`);
-      lines.push('');
-      for (const step of res.steps || []) {
-        lines.push(`Zona: ${step.zone}  Servidor: ${step.server}  Status: ${step.status}  Tempo: ${fmtMs(step.duration_ms)} ms`);
-        if (step.note) lines.push(`  obs: ${step.note}`);
-        for (const r of step.records || []) lines.push('  ' + r);
-        lines.push('');
-      }
-      return lines.join('\n');
-    },
-  });
-});
-
-document.getElementById('dns-reverse-btn').addEventListener('click', () => {
-  const ip = document.getElementById('dns-reverse-ip').value.trim();
-  const errorBox = document.getElementById('dns-reverse-error');
-  if (!ip) {
-    errorBox.textContent = 'Informe um endereco IP.';
-    errorBox.classList.remove('hidden');
-    return;
-  }
-  runSimpleAction({
-    btn: document.getElementById('dns-reverse-btn'),
-    errorBox,
-    output: document.getElementById('dns-reverse-output'),
-    fn: async () => {
-      const res = await api('/api/dns/reverse', { method: 'POST', body: JSON.stringify({ ip }) });
-      return formatDNSResult(res);
-    },
-  });
-});
-
-// ----- Benchmark -----
-
-function parseDomainsTextarea(id) {
-  return document.getElementById(id).value
-    .split('\n').map(s => s.trim()).filter(Boolean);
-}
-
-function formatBenchStats(stats) {
-  if (!stats || !stats.count) return 'Sem dados.';
-  return `Consultas: ${stats.count} | Erros: ${stats.errors} | `
-    + `Min: ${fmtMs(stats.min_ms)} ms | Media: ${fmtMs(stats.avg_ms)} ms | `
-    + `P50: ${fmtMs(stats.p50_ms)} ms | P95: ${fmtMs(stats.p95_ms)} ms | Max: ${fmtMs(stats.max_ms)} ms`;
-}
-
-document.getElementById('bench-cache-btn').addEventListener('click', async () => {
-  const domains = parseDomainsTextarea('bench-cache-domains');
-  const errorBox = document.getElementById('bench-cache-error');
-  const table = document.getElementById('bench-cache-table');
-  errorBox.classList.add('hidden');
-  table.classList.add('hidden');
-  const btn = document.getElementById('bench-cache-btn');
-  btn.disabled = true;
-  try {
-    const res = await api('/api/benchmark/cache', { method: 'POST', body: JSON.stringify({ domains }) });
-    const body = document.getElementById('bench-cache-body');
-    body.innerHTML = '';
-    for (const item of res.items) {
-      const tr = document.createElement('tr');
-      if (item.error) {
-        tr.innerHTML = `<td>${escapeHtml(item.domain)}</td><td colspan="3">Erro: ${escapeHtml(item.error)}</td>`;
-      } else {
-        const speedup = item.warm_ms > 0 ? (item.cold_ms / item.warm_ms).toFixed(1) + 'x' : '-';
-        tr.innerHTML = `
-          <td>${escapeHtml(item.domain)}</td>
-          <td>${fmtMs(item.cold_ms)}</td>
-          <td>${fmtMs(item.warm_ms)}</td>
-          <td>${speedup}</td>
-        `;
-      }
-      body.appendChild(tr);
-    }
-    table.classList.remove('hidden');
-  } catch (err) {
-    errorBox.textContent = 'Erro: ' + err.message;
-    errorBox.classList.remove('hidden');
-  } finally {
-    btn.disabled = false;
-  }
-});
-
-function renderBenchResultTable(bodyId, items) {
-  const body = document.getElementById(bodyId);
-  body.innerHTML = '';
-  for (const item of items) {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${escapeHtml(item.domain)}</td>
-      <td>${escapeHtml(item.status)}${item.error ? ' (' + escapeHtml(item.error) + ')' : ''}</td>
-      <td>${item.ms ? fmtMs(item.ms) : '-'}</td>
-    `;
-    body.appendChild(tr);
-  }
-}
-
-document.getElementById('bench-batch-btn').addEventListener('click', async () => {
-  const domains = parseDomainsTextarea('bench-batch-domains');
-  const errorBox = document.getElementById('bench-batch-error');
-  const table = document.getElementById('bench-batch-table');
-  errorBox.classList.add('hidden');
-  table.classList.add('hidden');
-  const btn = document.getElementById('bench-batch-btn');
-  btn.disabled = true;
-  try {
-    const res = await api('/api/benchmark/batch', { method: 'POST', body: JSON.stringify({ domains }) });
-    document.getElementById('bench-batch-stats').textContent = formatBenchStats(res.stats);
-    renderBenchResultTable('bench-batch-body', res.items);
-    table.classList.remove('hidden');
-  } catch (err) {
-    errorBox.textContent = 'Erro: ' + err.message;
-    errorBox.classList.remove('hidden');
-  } finally {
-    btn.disabled = false;
-  }
-});
-
-document.getElementById('bench-replay-btn').addEventListener('click', async () => {
-  const n = document.getElementById('bench-replay-n').value || 20;
-  const errorBox = document.getElementById('bench-replay-error');
-  const table = document.getElementById('bench-replay-table');
-  errorBox.classList.add('hidden');
-  table.classList.add('hidden');
-  const btn = document.getElementById('bench-replay-btn');
-  btn.disabled = true;
-  try {
-    const res = await api(`/api/benchmark/replay?n=${encodeURIComponent(n)}`, { method: 'GET' });
-    document.getElementById('bench-replay-stats').textContent = formatBenchStats(res.stats);
-    renderBenchResultTable('bench-replay-body', res.items);
-    table.classList.remove('hidden');
-  } catch (err) {
-    errorBox.textContent = 'Erro: ' + err.message;
-    errorBox.classList.remove('hidden');
-  } finally {
-    btn.disabled = false;
-  }
-});
-
-document.getElementById('bench-load-btn').addEventListener('click', () => {
-  const domain = document.getElementById('bench-load-domain').value.trim() || 'google.com';
-  const concurrency = parseInt(document.getElementById('bench-load-concurrency').value, 10) || 10;
-  const total = parseInt(document.getElementById('bench-load-total').value, 10) || 200;
-  runSimpleAction({
-    btn: document.getElementById('bench-load-btn'),
-    errorBox: document.getElementById('bench-load-error'),
-    output: document.getElementById('bench-load-output'),
-    fn: async () => {
-      const res = await api('/api/benchmark/load', { method: 'POST', body: JSON.stringify({ domain, concurrency, total }) });
-      const lines = [];
-      lines.push(`Dominio: ${res.domain}`);
-      lines.push(`Concorrencia: ${res.concurrency}  Total de consultas: ${res.total}`);
-      lines.push(`Duracao total: ${fmtMs(res.duration_ms)} ms`);
-      lines.push(`Vazao: ${res.qps.toFixed(1)} consultas/s`);
-      lines.push(formatBenchStats(res.stats));
-      return lines.join('\n');
-    },
-  });
-});
-
-document.getElementById('bench-hist-btn').addEventListener('click', async () => {
-  const errorBox = document.getElementById('bench-hist-error');
-  const table = document.getElementById('bench-hist-table');
-  errorBox.classList.add('hidden');
-  table.classList.add('hidden');
-  const btn = document.getElementById('bench-hist-btn');
-  btn.disabled = true;
-  try {
-    const res = await api('/api/benchmark/histogram');
-    const body = document.getElementById('bench-hist-body');
-    body.innerHTML = '';
-    const items = res.items || [];
-    if (items.length === 0) {
-      body.innerHTML = '<tr><td colspan="2">Sem dados ainda.</td></tr>';
-    } else {
-      for (const b of items) {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${escapeHtml(b.label)}</td><td>${b.count}</td>`;
-        body.appendChild(tr);
-      }
-    }
-    table.classList.remove('hidden');
-  } catch (err) {
-    errorBox.textContent = 'Erro: ' + err.message;
-    errorBox.classList.remove('hidden');
-  } finally {
-    btn.disabled = false;
-  }
-});
-
-document.getElementById('bench-compare-btn').addEventListener('click', async () => {
-  const domains = parseDomainsTextarea('bench-compare-domains');
-  const errorBox = document.getElementById('bench-compare-error');
-  const table = document.getElementById('bench-compare-table');
-  errorBox.classList.add('hidden');
-  table.classList.add('hidden');
-  const btn = document.getElementById('bench-compare-btn');
-  btn.disabled = true;
-  try {
-    const res = await api('/api/benchmark/compare', { method: 'POST', body: JSON.stringify({ domains }) });
-    const body = document.getElementById('bench-compare-body');
-    body.innerHTML = '';
-    for (const item of res.items) {
-      const s = item.stats || {};
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${escapeHtml(item.server)}</td>
-        <td>${s.count || 0}</td>
-        <td>${s.errors || 0}</td>
-        <td>${fmtMs(s.min_ms)}</td>
-        <td>${fmtMs(s.avg_ms)}</td>
-        <td>${fmtMs(s.p50_ms)}</td>
-        <td>${fmtMs(s.p95_ms)}</td>
-        <td>${fmtMs(s.max_ms)}</td>
-      `;
-      body.appendChild(tr);
-    }
-    table.classList.remove('hidden');
-  } catch (err) {
-    errorBox.textContent = 'Erro: ' + err.message;
-    errorBox.classList.remove('hidden');
-  } finally {
-    btn.disabled = false;
-  }
 });
 
 // Check if already authenticated

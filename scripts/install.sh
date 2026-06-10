@@ -3,18 +3,13 @@
 # Installer for unbound-dash on Debian servers already running Unbound.
 #
 # Usage:
-#   sudo ./install.sh [-v VERSION] [-f LOCAL_BINARY] [-p ADMIN_PASSWORD] [-l LISTEN_ADDR] [-d DOMAIN] [-e EMAIL]
+#   sudo ./install.sh [-v VERSION] [-f LOCAL_BINARY] [-p ADMIN_PASSWORD] [-l LISTEN_ADDR]
 #
 #   -v VERSION       Release tag to download (default: latest). Requires
 #                     GITHUB_TOKEN env var if the repo is private.
 #   -f LOCAL_BINARY  Use a local binary instead of downloading a release.
 #   -p PASSWORD      Admin password for the dashboard (prompted if omitted).
-#   -l LISTEN_ADDR   Address to listen on (default: :8080). Ignored if -d is set.
-#   -d DOMAIN        Public domain name pointing to this server. If set,
-#                     installs nginx + certbot, obtains a Let's Encrypt
-#                     certificate and serves the dashboard over HTTPS,
-#                     with automatic renewal via cron.
-#   -e EMAIL         Email for Let's Encrypt renewal notices (optional).
+#   -l LISTEN_ADDR   Address to listen on (default: :8080).
 #
 set -euo pipefail
 
@@ -23,17 +18,13 @@ VERSION="latest"
 LOCAL_BINARY=""
 ADMIN_PASSWORD=""
 LISTEN_ADDR=":8080"
-DOMAIN=""
-CERTBOT_EMAIL=""
 
-while getopts "v:f:p:l:d:e:h" opt; do
+while getopts "v:f:p:l:h" opt; do
   case "$opt" in
     v) VERSION="$OPTARG" ;;
     f) LOCAL_BINARY="$OPTARG" ;;
     p) ADMIN_PASSWORD="$OPTARG" ;;
     l) LISTEN_ADDR="$OPTARG" ;;
-    d) DOMAIN="$OPTARG" ;;
-    e) CERTBOT_EMAIL="$OPTARG" ;;
     h)
       grep '^#' "$0" | sed 's/^# \?//'
       exit 0
@@ -50,12 +41,6 @@ fi
 if ! command -v unbound-control >/dev/null 2>&1; then
   echo "unbound-control not found; is Unbound installed?" >&2
   exit 1
-fi
-
-if ! command -v pdftotext >/dev/null 2>&1; then
-  echo "==> Installing poppler-utils (pdftotext, usado para importar oficios em PDF)"
-  apt-get update -qq
-  apt-get install -y poppler-utils
 fi
 
 ARCH="$(dpkg --print-architecture)"
@@ -167,61 +152,6 @@ if ! grep -q "anatel-blocklist.conf" "$UNBOUND_CONF" 2>/dev/null; then
   printf '\ninclude: "%s"\n' "$BLOCKLIST_FILE" >> "$UNBOUND_CONF"
 fi
 
-if [ -n "$DOMAIN" ]; then
-  echo "==> Configuring HTTPS (nginx + Let's Encrypt) for ${DOMAIN}"
-
-  # The dashboard listens only on localhost; nginx terminates TLS and proxies to it.
-  LISTEN_ADDR="127.0.0.1:8080"
-
-  apt-get update -qq
-  apt-get install -y nginx certbot python3-certbot-nginx
-
-  NGINX_CONF="/etc/nginx/sites-available/unbound-dash.conf"
-  cat > "$NGINX_CONF" <<EOF
-server {
-    listen 80;
-    listen [::]:80;
-    server_name ${DOMAIN};
-
-    location / {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_http_version 1.1;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-
-        # Needed for the live log stream (SSE)
-        proxy_buffering off;
-        proxy_read_timeout 1h;
-    }
-}
-EOF
-  mkdir -p /etc/nginx/sites-enabled
-  ln -sf "$NGINX_CONF" /etc/nginx/sites-enabled/unbound-dash.conf
-  rm -f /etc/nginx/sites-enabled/default
-  nginx -t
-  systemctl enable --now nginx
-  systemctl reload nginx
-
-  echo "==> Requesting Let's Encrypt certificate"
-  CERTBOT_ARGS=(--nginx -d "$DOMAIN" --non-interactive --agree-tos --redirect)
-  if [ -n "$CERTBOT_EMAIL" ]; then
-    CERTBOT_ARGS+=(-m "$CERTBOT_EMAIL")
-  else
-    CERTBOT_ARGS+=(--register-unsafely-without-email)
-  fi
-  certbot "${CERTBOT_ARGS[@]}"
-
-  echo "==> Configuring automatic certificate renewal (cron)"
-  cat > /etc/cron.d/certbot-renew <<'EOF'
-SHELL=/bin/sh
-PATH=/usr/sbin:/usr/bin:/sbin:/bin
-17 3,15 * * * root certbot renew --quiet --deploy-hook "systemctl reload nginx"
-EOF
-  chmod 644 /etc/cron.d/certbot-renew
-fi
-
 echo "==> Writing config"
 mkdir -p /etc/unbound-dash
 CONFIG_PATH="/etc/unbound-dash/config.json"
@@ -249,7 +179,6 @@ if [ -z "$ADMIN_PASSWORD" ]; then
 fi
 
 UNBOUND_CONTROL_BIN="$(command -v unbound-control)"
-PDFTOTEXT_BIN="$(command -v pdftotext || echo pdftotext)"
 
 cat > "$CONFIG_PATH" <<EOF
 {
@@ -258,7 +187,6 @@ cat > "$CONFIG_PATH" <<EOF
   "unbound_conf": "${UNBOUND_CONF}",
   "unbound_log_file": "${UNBOUND_LOG_FILE}",
   "blocklist_file": "${BLOCKLIST_FILE}",
-  "pdftotext_bin": "${PDFTOTEXT_BIN}",
   "admin_password": "${ADMIN_PASSWORD}"
 }
 EOF
@@ -280,11 +208,5 @@ systemctl daemon-reload
 systemctl enable --now unbound-dash
 
 echo "==> Done"
-if [ -n "$DOMAIN" ]; then
-  echo "    unbound-dash is available at https://${DOMAIN}"
-  echo "    (proxied by nginx, internal listener on ${LISTEN_ADDR})"
-  echo "    certificate auto-renews via /etc/cron.d/certbot-renew"
-else
-  echo "    unbound-dash is listening on ${LISTEN_ADDR}"
-fi
+echo "    unbound-dash is listening on ${LISTEN_ADDR}"
 echo "    config: ${CONFIG_PATH}"
