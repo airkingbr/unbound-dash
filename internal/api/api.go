@@ -262,6 +262,7 @@ func (s *Server) handleAddBlocklist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.reloadUnbound()
+	s.flushZone(domain)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -293,12 +294,22 @@ func (s *Server) handleDeleteBlocklist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.reloadUnbound()
+	s.flushZone(domain)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (s *Server) reloadUnbound() {
 	if _, err := unboundctl.RunControl(s.client, "reload", nil); err != nil {
 		log.Printf("reload unbound after blocklist change: %v", err)
+	}
+}
+
+// flushZone removes any cached records at or below domain so the
+// reloaded local-zone configuration takes effect immediately, instead
+// of waiting for the cached entries' TTL to expire.
+func (s *Server) flushZone(domain string) {
+	if _, err := unboundctl.RunControl(s.client, "flush_zone", []string{domain}); err != nil {
+		log.Printf("flush_zone %s after blocklist change: %v", domain, err)
 	}
 }
 

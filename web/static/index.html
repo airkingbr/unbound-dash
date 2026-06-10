@@ -355,10 +355,11 @@ function showDashboard() {
   loginScreen.classList.add('hidden');
   dashboard.classList.remove('hidden');
   if (!qpsChart) initChart();
-  refreshStats();
+  refreshBlocklistCount().then(refreshStats);
   refreshTopLists();
   setInterval(refreshStats, 5000);
   setInterval(refreshTopLists, 15000);
+  setInterval(refreshBlocklistCount, 15000);
 }
 
 loginForm.addEventListener('submit', async (e) => {
@@ -513,6 +514,8 @@ function cacheHitRatio(stats) {
   return (hits / total) * 100;
 }
 
+let blocklistCount = null;
+
 function renderCards(stats) {
   const container = document.getElementById('stat-cards');
   container.innerHTML = '';
@@ -523,6 +526,20 @@ function renderCards(stats) {
   for (const { key, label } of STAT_CARDS) {
     if (stats[key] === undefined) continue;
     addCard(container, label, formatNumber(stats[key]));
+  }
+
+  if (blocklistCount !== null) {
+    addCard(container, 'Dominios bloqueados', formatNumber(blocklistCount), 'yellow');
+  }
+}
+
+async function refreshBlocklistCount() {
+  try {
+    const res = await api('/api/blocklist');
+    blocklistCount = (res.items || []).length;
+    if (lastStats) renderCards(lastStats);
+  } catch (err) {
+    console.error(err);
   }
 }
 
@@ -651,6 +668,7 @@ document.getElementById('blocklist-body').addEventListener('click', async (e) =>
   try {
     await api(`/api/blocklist/${encodeURIComponent(domain)}`, { method: 'DELETE' });
     refreshBlocklist();
+    refreshBlocklistCount();
   } catch (err) {
     alert('Erro: ' + err.message);
     btn.disabled = false;
@@ -674,6 +692,7 @@ document.getElementById('blocklist-form').addEventListener('submit', async (e) =
     });
     document.getElementById('blocklist-form').reset();
     refreshBlocklist();
+    refreshBlocklistCount();
   } catch (err) {
     errorBox.textContent = 'Erro: ' + err.message;
     errorBox.classList.remove('hidden');
