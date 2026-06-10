@@ -148,7 +148,10 @@ EOF
 chmod 600 "$CONFIG_PATH"
 
 echo "==> Installing systemd service"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR=""
+if [ -n "${BASH_SOURCE:-}" ]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
 if [ -f "${SCRIPT_DIR}/unbound-dash.service" ]; then
   cp "${SCRIPT_DIR}/unbound-dash.service" /etc/systemd/system/unbound-dash.service
 else
