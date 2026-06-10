@@ -15,6 +15,10 @@ Esqueleto inicial:
 - [x] API HTTP (login com sessão, `/api/stats`, `/api/status`, `/api/control/{cmd}`)
 - [x] Frontend single-page (gráfico de QPS/cache hit, cards de estatísticas, painel de controle)
 - [x] Instalador (`scripts/install.sh`) + unit systemd
+- [x] Gerência de blocklist (`anatel-blocklist.conf`), com importação de ofícios em PDF
+- [x] Log do Unbound ao vivo (streaming)
+- [x] Testes DNS (consulta tipo dig, verificação de bloqueio, comparação de resolvedores, trace, reverso)
+- [x] Benchmark do recursivo (cache frio/quente, lote, replay, carga/QPS, histograma, comparação)
 - [ ] dnstap: estatísticas por IP/subnet, top domínios
 - [ ] Histórico persistente (SQLite)
 - [ ] Suporte a múltiplos servidores em uma única interface
@@ -24,8 +28,7 @@ Esqueleto inicial:
 Em um Debian que já roda Unbound:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/airkingbr/unbound-dash/main/scripts/install.sh -o install.sh
-sudo bash install.sh
+curl -fsSL https://raw.githubusercontent.com/airkingbr/unbound-dash/main/scripts/install.sh | sudo bash
 ```
 
 O instalador:
@@ -39,8 +42,8 @@ Por padrão a interface fica disponível em `http://SEU_SERVIDOR:8080`.
 
 ### Opções
 
-```
-sudo bash install.sh -p "minha-senha" -l ":8080"
+```bash
+curl -fsSL https://raw.githubusercontent.com/airkingbr/unbound-dash/main/scripts/install.sh | sudo bash -s -- -p "minha-senha" -l ":8080"
 ```
 
 ## Desenvolvimento
@@ -66,3 +69,72 @@ go run ./cmd/unbound-dash -config ./config.dev.json
 `reload`, `status`, `dump_cache`, `flush_requestlist`, `flush_bogus`,
 `flush_negative`, `flush <nome>`, `flush_zone <zona>`, `flush_type <nome> <tipo>`,
 `flush_infra <ip|all>`, `verbosity <nivel>`.
+
+## Bloqueios de domínios
+
+A aba **Bloqueios** gerencia o arquivo `anatel-blocklist.conf` (lista de
+`local-zone: ... always_nxdomain` incluída no `unbound.conf`):
+
+- **Importar ofício (PDF)**: envie o PDF de um ofício de bloqueio judicial;
+  o sistema extrai o texto com `pdftotext` e usa um *template* (pacote
+  `internal/oficio`) para identificar a origem (ex: CyberGaeco/MPSP) e listar
+  todos os domínios do anexo, junto com a referência (`fonte`) e a data do
+  ofício. Os domínios extraídos podem ser revisados/editados antes de aplicar.
+  Como cada órgão envia o ofício em um formato de tabela diferente, novos
+  formatos exigem um novo template em `internal/oficio` (implementando a
+  interface `Template`).
+- **Adicionar bloqueio manual**: domínio + origem + fonte + data.
+- **Lista de domínios bloqueados**: busca por domínio/origem/fonte, paginação
+  de 100 em 100, remoção individual e **remoção em lote** (seleciona vários
+  e remove de uma vez, com um único `flush_zone .` no final).
+
+Toda alteração na blocklist recarrega o Unbound (`reload`) e limpa o cache
+(`flush_zone`) para que o bloqueio/desbloqueio tenha efeito imediato.
+
+## Testes DNS
+
+A aba **Testes DNS** oferece ferramentas de diagnóstico estilo `dig`,
+implementadas em Go puro (`internal/dnstools`, sem depender de binários
+externos):
+
+- **Consulta DNS (dig)**: resolve um nome com o tipo de registro escolhido
+  (A, AAAA, CNAME, MX, TXT, NS, SOA, CAA, SRV, ANY) contra o resolvedor local
+  (`127.0.0.1:53`) ou outro servidor informado. Mostra status (NOERROR,
+  NXDOMAIN, SERVFAIL...), tempo de resposta, flag DNSSEC (`AD`) e os
+  registros de resposta/autoridade.
+- **Verificar bloqueio**: informa se um domínio está na blocklist (direto ou
+  via zona pai bloqueada) e confirma com uma consulta real ao resolvedor
+  local — útil para validar se um bloqueio está realmente em vigor.
+- **Comparar resolvedores**: roda a mesma consulta em paralelo contra o
+  Unbound local, Cloudflare (`1.1.1.1`) e Google (`8.8.8.8`), lado a lado —
+  ajuda a identificar se um problema é do seu recursivo ou de origem/rede.
+- **Rastrear resolução (`dig +trace`)**: faz a resolução iterativa a partir
+  dos servidores raiz, mostrando cada salto de delegação (zona, servidor,
+  status, tempo e registros retornados).
+- **Lookup reverso (PTR)**: resolve hostname a partir de um IP.
+
+## Benchmark do recursivo
+
+A aba **Benchmark** ajuda a avaliar o desempenho do Unbound como recursivo
+(`internal/benchmark`):
+
+- **Cache: frio vs quente**: para cada domínio, executa `flush_zone`, mede o
+  tempo da 1ª consulta (resolução recursiva completa) e da 2ª (servida do
+  cache), mostrando o ganho (`speedup`).
+- **Lote de domínios**: consulta uma lista de domínios (uma lista padrão com
+  domínios populares globais e brasileiros, ou uma lista informada) e mostra
+  o tempo de cada um além de estatísticas agregadas (mín/média/p50/p95/máx).
+- **Replay do top domínios**: reconsulta os domínios mais requisitados
+  recentemente (a partir do log de consultas do Unbound), simulando a carga
+  real do ambiente.
+- **Teste de carga (QPS)**: dispara N consultas concorrentes para um domínio
+  e mede a vazão (consultas/segundo) e a distribuição de latência.
+- **Histograma de tempos de resposta**: exibe o histograma interno do
+  Unbound (`unbound-control stats_noreset`), sem gerar tráfego adicional.
+- **Comparar com resolvedores públicos**: roda o teste em lote contra o
+  Unbound local, Cloudflare e Google, e compara as estatísticas agregadas —
+  mostra se o recursivo local está mais rápido que usar um resolvedor
+  público diretamente.
+
+Essas ferramentas não exigem nenhuma dependência adicional além do que já é
+instalado pelo `scripts/install.sh`.
