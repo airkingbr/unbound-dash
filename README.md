@@ -61,13 +61,44 @@ padrão):
 ```bash
 export GITHUB_TOKEN="ghp_xxxxxxxxxxxxxxxxxxxx"
 
-curl -fsSL -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-  https://raw.githubusercontent.com/airkingbr/unbound-dash/main/scripts/install.sh \
-  | sudo GITHUB_TOKEN="${GITHUB_TOKEN}" bash
+curl -fsSL -H "Authorization: token ${GITHUB_TOKEN}" \
+  -H "Accept: application/vnd.github.raw" \
+  https://api.github.com/repos/airkingbr/unbound-dash/contents/scripts/install.sh \
+  -o install.sh
+
+sudo GITHUB_TOKEN="${GITHUB_TOKEN}" bash install.sh
 ```
 
 O token precisa de permissão de leitura no repositório (`repo` para um PAT
 clássico, ou `Contents: Read-only` para um fine-grained token).
+
+## Atualização
+
+Para atualizar uma instalação existente para a última release, use
+`scripts/update.sh`. Ele baixa o novo binário, faz backup do binário atual
+(`/usr/local/bin/unbound-dash.bak.<timestamp>`) e reinicia o serviço:
+
+```bash
+curl -fsSL -o update.sh https://raw.githubusercontent.com/airkingbr/unbound-dash/main/scripts/update.sh
+sudo bash update.sh
+```
+
+Em repositório privado, baixe via API com o token (mesmo esquema do
+`install.sh`) e repasse `GITHUB_TOKEN` ao `sudo`:
+
+```bash
+curl -fsSL -H "Authorization: token ${GITHUB_TOKEN}" \
+  -H "Accept: application/vnd.github.raw" \
+  https://api.github.com/repos/airkingbr/unbound-dash/contents/scripts/update.sh \
+  -o update.sh
+
+sudo GITHUB_TOKEN="${GITHUB_TOKEN}" bash update.sh
+```
+
+Opções:
+
+- `-v VERSION` — versão da release a instalar (padrão: `latest`)
+- `-f BINARIO_LOCAL` — atualiza a partir de um binário local em vez de baixar uma release
 
 ## Desenvolvimento
 
