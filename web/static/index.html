@@ -568,28 +568,36 @@ async function refreshTopLists() {
   }
 }
 
-const MAX_LOG_LINES = 500;
+const MAX_LOG_LINES = 300;
+const LOG_FLUSH_INTERVAL = 500;
 let logStream = null;
+let logLines = [];
+let logPending = [];
+let logFlushTimer = null;
 
 async function loadLogTail() {
   const out = document.getElementById('logs-output');
   out.textContent = 'Carregando...';
   try {
     const res = await api('/api/logs');
-    out.textContent = (res.lines || []).join('\n') || '(log vazio)';
+    logLines = (res.lines || []).slice(-MAX_LOG_LINES);
+    out.textContent = logLines.join('\n') || '(log vazio)';
     out.scrollTop = out.scrollHeight;
   } catch (err) {
     out.textContent = 'Erro: ' + err.message;
   }
 }
 
-function appendLogLine(line) {
+function flushLogLines() {
+  if (logPending.length === 0) return;
   const out = document.getElementById('logs-output');
   const atBottom = out.scrollTop + out.clientHeight >= out.scrollHeight - 10;
-  const lines = out.textContent.split('\n');
-  lines.push(line);
-  if (lines.length > MAX_LOG_LINES) lines.splice(0, lines.length - MAX_LOG_LINES);
-  out.textContent = lines.join('\n');
+
+  logLines.push(...logPending);
+  logPending = [];
+  if (logLines.length > MAX_LOG_LINES) logLines.splice(0, logLines.length - MAX_LOG_LINES);
+
+  out.textContent = logLines.join('\n');
   if (atBottom) out.scrollTop = out.scrollHeight;
 }
 
@@ -601,9 +609,14 @@ function setLogStatus(text, live) {
 async function startLogStream() {
   await loadLogTail();
   stopLogStream();
+  logPending = [];
+  logFlushTimer = setInterval(flushLogLines, LOG_FLUSH_INTERVAL);
   logStream = new EventSource('/api/logs/stream');
   logStream.onopen = () => setLogStatus('ao vivo', true);
-  logStream.onmessage = (e) => appendLogLine(e.data);
+  logStream.onmessage = (e) => {
+    logPending.push(e.data);
+    if (logPending.length > MAX_LOG_LINES) logPending.splice(0, logPending.length - MAX_LOG_LINES);
+  };
   logStream.onerror = () => setLogStatus('reconectando...', false);
 }
 
@@ -612,6 +625,11 @@ function stopLogStream() {
     logStream.close();
     logStream = null;
   }
+  if (logFlushTimer) {
+    clearInterval(logFlushTimer);
+    logFlushTimer = null;
+  }
+  logPending = [];
   setLogStatus('', false);
 }
 
