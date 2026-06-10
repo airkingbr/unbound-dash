@@ -7,9 +7,11 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/airkingbr/unbound-dash/internal/api"
 	"github.com/airkingbr/unbound-dash/internal/config"
+	"github.com/airkingbr/unbound-dash/internal/querylog"
 	"github.com/airkingbr/unbound-dash/internal/unboundctl"
 	"github.com/airkingbr/unbound-dash/web"
 )
@@ -37,7 +39,18 @@ func main() {
 	}
 
 	client := unboundctl.New(cfg.UnboundControlBin, cfg.UnboundConf)
-	server := api.New(cfg, client, static)
+
+	var tailer *querylog.Tailer
+	if cfg.UnboundLogFile != "" {
+		if _, err := os.Stat(cfg.UnboundLogFile); err == nil {
+			tailer = querylog.NewTailer(cfg.UnboundLogFile)
+			go tailer.Run()
+		} else {
+			log.Printf("query log %s not found, top domains/clients disabled: %v", cfg.UnboundLogFile, err)
+		}
+	}
+
+	server := api.New(cfg, client, static, tailer)
 
 	log.Printf("unbound-dash listening on %s", cfg.ListenAddr)
 	if err := http.ListenAndServe(cfg.ListenAddr, server.Routes()); err != nil {

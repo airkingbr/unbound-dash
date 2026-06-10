@@ -99,6 +99,19 @@
     font-family: "JetBrains Mono", Consolas, monospace; color: var(--muted);
   }
 
+  .two-col { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 24px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table th, table td {
+    text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border);
+  }
+  table th {
+    color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600;
+  }
+  table td.num, table th.num { text-align: right; font-family: "JetBrains Mono", Consolas, monospace; }
+  table tbody tr:last-child td { border-bottom: none; }
+  .panel .hint { color: var(--muted-2); font-size: 12px; margin-top: 10px; }
+
   #login-screen {
     height: 100vh; display: flex; align-items: center; justify-content: center;
     flex-direction: column; padding: 16px;
@@ -165,6 +178,46 @@
       <canvas id="qps-chart" height="80"></canvas>
     </div>
 
+    <div class="two-col">
+      <div class="panel">
+        <h2>Tipos de consulta</h2>
+        <canvas id="qtype-chart" height="200"></canvas>
+      </div>
+      <div class="panel">
+        <h2>Codigos de resposta</h2>
+        <canvas id="rcode-chart" height="200"></canvas>
+      </div>
+    </div>
+
+    <div class="grid" id="memory-cards"></div>
+
+    <div class="two-col">
+      <div class="panel">
+        <h2>Zonas mais consultadas</h2>
+        <table>
+          <thead><tr><th>Dominio</th><th class="num">Consultas</th></tr></thead>
+          <tbody id="top-domains-body"><tr><td colspan="2">Carregando...</td></tr></tbody>
+        </table>
+        <div class="hint" id="top-domains-since"></div>
+      </div>
+      <div class="panel">
+        <h2>IPs que mais resolvem nomes</h2>
+        <table>
+          <thead><tr><th>Endereco IP</th><th class="num">Consultas</th></tr></thead>
+          <tbody id="top-clients-body"><tr><td colspan="2">Carregando...</td></tr></tbody>
+        </table>
+        <div class="hint" id="top-clients-since"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Log do Unbound</h2>
+      <div class="row">
+        <button id="logs-refresh-btn">Atualizar</button>
+      </div>
+      <pre id="logs-output">Clique em "Atualizar" para carregar o log.</pre>
+    </div>
+
     <div class="panel">
       <h2>Controle (unbound-control)</h2>
       <div class="row">
@@ -205,6 +258,8 @@ const loginForm = document.getElementById('login-form');
 const loginError = document.getElementById('login-error');
 
 let qpsChart;
+let qtypeChart;
+let rcodeChart;
 let lastStats = null;
 let lastTime = null;
 
@@ -231,7 +286,9 @@ function showDashboard() {
   dashboard.classList.remove('hidden');
   if (!qpsChart) initChart();
   refreshStats();
+  refreshTopLists();
   setInterval(refreshStats, 5000);
+  setInterval(refreshTopLists, 15000);
 }
 
 loginForm.addEventListener('submit', async (e) => {
@@ -271,6 +328,76 @@ function initChart() {
       plugins: { legend: { labels: { color: '#9ca3af' } } },
     },
   });
+
+  qtypeChart = new Chart(document.getElementById('qtype-chart'), {
+    type: 'doughnut',
+    data: { labels: [], datasets: [{ data: [], backgroundColor: CHART_COLORS }] },
+    options: {
+      animation: false,
+      plugins: { legend: { position: 'right', labels: { color: '#9ca3af' } } },
+    },
+  });
+
+  rcodeChart = new Chart(document.getElementById('rcode-chart'), {
+    type: 'doughnut',
+    data: { labels: [], datasets: [{ data: [], backgroundColor: CHART_COLORS }] },
+    options: {
+      animation: false,
+      plugins: { legend: { position: 'right', labels: { color: '#9ca3af' } } },
+    },
+  });
+}
+
+const CHART_COLORS = [
+  '#3b82f6', '#22c55e', '#eab308', '#ef4444', '#a855f7',
+  '#06b6d4', '#f97316', '#ec4899', '#84cc16', '#6366f1',
+];
+
+const MEMORY_LABELS = {
+  'mem.cache.rrset': 'Cache RRset',
+  'mem.cache.message': 'Cache de mensagens',
+  'mem.mod.iterator': 'Modulo iterator',
+  'mem.mod.validator': 'Modulo validator',
+  'mem.mod.respip': 'Modulo respip',
+  'mem.mod.subnet': 'Modulo subnet',
+  'mem.mod.ipsecmod': 'Modulo ipsecmod',
+  'mem.streamwait.size': 'Stream wait',
+};
+
+function renderMemoryCards(stats) {
+  const container = document.getElementById('memory-cards');
+  container.innerHTML = '';
+  for (const key of Object.keys(stats)) {
+    if (!key.startsWith('mem.')) continue;
+    const label = MEMORY_LABELS[key] || key;
+    addCard(container, label, formatBytes(stats[key]));
+  }
+}
+
+function formatBytes(n) {
+  if (!n) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024;
+    i++;
+  }
+  return n.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' ' + units[i];
+}
+
+function renderDistributionChart(chart, stats, prefix) {
+  const labels = [];
+  const values = [];
+  for (const key of Object.keys(stats).sort()) {
+    if (!key.startsWith(prefix)) continue;
+    const value = stats[key];
+    if (!value) continue;
+    labels.push(key.slice(prefix.length));
+    values.push(value);
+  }
+  chart.data.labels = labels;
+  chart.data.datasets[0].data = values;
+  chart.update();
 }
 
 const STAT_CARDS = [
@@ -345,10 +472,60 @@ async function refreshStats() {
     const stats = await api('/api/stats');
     renderCards(stats);
     updateChart(stats);
+    renderMemoryCards(stats);
+    renderDistributionChart(qtypeChart, stats, 'num.query.type.');
+    renderDistributionChart(rcodeChart, stats, 'num.answer.rcode.');
   } catch (err) {
     console.error(err);
   }
 }
+
+function renderTopTable(bodyId, sinceId, items, since) {
+  const body = document.getElementById(bodyId);
+  body.innerHTML = '';
+  if (!items || items.length === 0) {
+    body.innerHTML = '<tr><td colspan="2">Sem dados.</td></tr>';
+  } else {
+    for (const { key, count } of items) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${key}</td><td class="num">${formatNumber(count)}</td>`;
+      body.appendChild(tr);
+    }
+  }
+  if (since) {
+    document.getElementById(sinceId).textContent =
+      'Desde ' + new Date(since).toLocaleString('pt-BR');
+  }
+}
+
+async function refreshTopLists() {
+  try {
+    const domains = await api('/api/top-domains');
+    renderTopTable('top-domains-body', 'top-domains-since', domains.items, domains.since);
+  } catch (err) {
+    document.getElementById('top-domains-body').innerHTML =
+      `<tr><td colspan="2">Erro: ${err.message}</td></tr>`;
+  }
+  try {
+    const clients = await api('/api/top-clients');
+    renderTopTable('top-clients-body', 'top-clients-since', clients.items, clients.since);
+  } catch (err) {
+    document.getElementById('top-clients-body').innerHTML =
+      `<tr><td colspan="2">Erro: ${err.message}</td></tr>`;
+  }
+}
+
+document.getElementById('logs-refresh-btn').addEventListener('click', async () => {
+  const out = document.getElementById('logs-output');
+  out.textContent = 'Carregando...';
+  try {
+    const res = await api('/api/logs');
+    out.textContent = (res.lines || []).join('\n') || '(log vazio)';
+    out.scrollTop = out.scrollHeight;
+  } catch (err) {
+    out.textContent = 'Erro: ' + err.message;
+  }
+});
 
 document.querySelectorAll('[data-cmd]').forEach(btn => {
   btn.addEventListener('click', async () => {

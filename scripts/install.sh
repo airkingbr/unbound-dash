@@ -109,6 +109,39 @@ EOF
   unbound-control status >/dev/null
 fi
 
+echo "==> Enabling Unbound query log (for top domains/clients stats)"
+CONF_D="/etc/unbound/unbound.conf.d"
+mkdir -p "$CONF_D"
+if [ ! -f "${CONF_D}/99-unbound-dash-querylog.conf" ]; then
+  cat > "${CONF_D}/99-unbound-dash-querylog.conf" <<'EOF'
+server:
+    log-queries: yes
+EOF
+  if ! grep -q "include:.*unbound.conf.d" "$UNBOUND_CONF" 2>/dev/null; then
+    cp "$UNBOUND_CONF" "${UNBOUND_CONF}.bak.$(date +%s)"
+    printf '\ninclude: "%s/*.conf"\n' "$CONF_D" >> "$UNBOUND_CONF"
+  fi
+  unbound-control set_option log-queries: yes >/dev/null 2>&1 || true
+fi
+
+UNBOUND_LOG_FILE="$(unbound-control get_option logfile 2>/dev/null | tr -d '[:space:]')"
+if [ -z "$UNBOUND_LOG_FILE" ]; then
+  UNBOUND_LOG_FILE="/var/log/unbound/unbound.log"
+fi
+
+echo "==> Configuring log rotation for ${UNBOUND_LOG_FILE}"
+cat > /etc/logrotate.d/unbound-dash <<EOF
+${UNBOUND_LOG_FILE} {
+    daily
+    rotate 7
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+}
+EOF
+
 echo "==> Writing config"
 mkdir -p /etc/unbound-dash
 CONFIG_PATH="/etc/unbound-dash/config.json"
@@ -142,6 +175,7 @@ cat > "$CONFIG_PATH" <<EOF
   "listen_addr": "${LISTEN_ADDR}",
   "unbound_control_bin": "${UNBOUND_CONTROL_BIN}",
   "unbound_conf": "${UNBOUND_CONF}",
+  "unbound_log_file": "${UNBOUND_LOG_FILE}",
   "admin_password": "${ADMIN_PASSWORD}"
 }
 EOF

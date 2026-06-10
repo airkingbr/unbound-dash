@@ -13,6 +13,7 @@ type Config struct {
 	ListenAddr        string `json:"listen_addr"`
 	UnboundControlBin string `json:"unbound_control_bin"`
 	UnboundConf       string `json:"unbound_conf"`
+	UnboundLogFile    string `json:"unbound_log_file"`
 	AdminPassword     string `json:"admin_password"`
 	SessionSecret     string `json:"session_secret"`
 }
@@ -22,6 +23,7 @@ func defaults() Config {
 		ListenAddr:        ":8080",
 		UnboundControlBin: "/usr/sbin/unbound-control",
 		UnboundConf:       "/etc/unbound/unbound.conf",
+		UnboundLogFile:    "/var/log/unbound/unbound.log",
 	}
 }
 
