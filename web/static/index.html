@@ -541,7 +541,7 @@
       </div>
     </div>
   </main>
-  <div class="footer-note" id="dashboard-footer">unbound-dash &middot; monitoramento Unbound</div>
+  <div class="footer-note" id="dashboard-footer">Unbound Dash</div>
 </div>
 
 <script>
@@ -785,7 +785,7 @@ async function refreshStatus() {
     unboundStatus = status;
     if (status.dash_version) {
       const footer = document.getElementById('dashboard-footer');
-      footer.textContent = `unbound-dash ${status.dash_version} · monitoramento Unbound`;
+      footer.textContent = `Unbound Dash ${status.dash_version}`;
     }
     if (lastStats) renderCards(lastStats);
   } catch (err) {
