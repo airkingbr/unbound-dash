@@ -4,6 +4,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
@@ -43,6 +44,7 @@ func (s *Server) Routes() http.Handler {
 	protected.HandleFunc("GET /api/top-domains", s.handleTopDomains)
 	protected.HandleFunc("GET /api/top-clients", s.handleTopClients)
 	protected.HandleFunc("GET /api/logs", s.handleLogs)
+	protected.HandleFunc("GET /api/logs/stream", s.handleLogStream)
 	protected.HandleFunc("POST /api/control/{command}", s.handleControl)
 
 	mux.Handle("/api/", auth.Middleware(s.cfg.SessionSecret)(protected))
@@ -160,6 +162,40 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"lines": lines})
+}
+
+func (s *Server) handleLogStream(w http.ResponseWriter, r *http.Request) {
+	if s.querylog == nil {
+		writeError(w, http.StatusServiceUnavailable, "log de consultas (log-queries) nao habilitado")
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "streaming nao suportado")
+		return
+	}
+
+	lines, cancel := s.querylog.Subscribe()
+	defer cancel()
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	for {
+		select {
+		case line, ok := <-lines:
+			if !ok {
+				return
+			}
+			fmt.Fprintf(w, "data: %s\n\n", line)
+			flusher.Flush()
+		case <-r.Context().Done():
+			return
+		}
+	}
 }
 
 func intParam(r *http.Request, name string, def int) int {

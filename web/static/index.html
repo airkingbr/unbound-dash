@@ -113,6 +113,11 @@
   table td.num, table th.num { text-align: right; font-family: "JetBrains Mono", Consolas, monospace; }
   table tbody tr:last-child td { border-bottom: none; }
   .panel .hint { color: var(--muted-2); font-size: 12px; margin-top: 10px; }
+  .panel h2 .hint { margin-top: 0; margin-left: 8px; font-size: 11px; font-weight: 500; text-transform: none; }
+  .hint .live-dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--green); margin-right: 4px; vertical-align: middle;
+  }
 
   #login-screen {
     height: 100vh; display: flex; align-items: center; justify-content: center;
@@ -268,11 +273,11 @@
 
     <div class="tab-content hidden" id="tab-logs">
       <div class="panel">
-        <h2>Log do Unbound</h2>
+        <h2>Log do Unbound <span class="hint" id="logs-status"></span></h2>
         <div class="row">
           <button id="logs-refresh-btn">Atualizar</button>
         </div>
-        <pre id="logs-output">Clique em "Atualizar" para carregar o log.</pre>
+        <pre id="logs-output">Abra esta aba para acompanhar o log ao vivo.</pre>
       </div>
     </div>
   </main>
@@ -345,6 +350,11 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     if (btn.dataset.tab === 'stats') {
       if (qtypeChart) qtypeChart.resize();
       if (rcodeChart) rcodeChart.resize();
+    }
+    if (btn.dataset.tab === 'logs') {
+      startLogStream();
+    } else {
+      stopLogStream();
     }
   });
 });
@@ -558,7 +568,10 @@ async function refreshTopLists() {
   }
 }
 
-document.getElementById('logs-refresh-btn').addEventListener('click', async () => {
+const MAX_LOG_LINES = 500;
+let logStream = null;
+
+async function loadLogTail() {
   const out = document.getElementById('logs-output');
   out.textContent = 'Carregando...';
   try {
@@ -568,7 +581,41 @@ document.getElementById('logs-refresh-btn').addEventListener('click', async () =
   } catch (err) {
     out.textContent = 'Erro: ' + err.message;
   }
-});
+}
+
+function appendLogLine(line) {
+  const out = document.getElementById('logs-output');
+  const atBottom = out.scrollTop + out.clientHeight >= out.scrollHeight - 10;
+  const lines = out.textContent.split('\n');
+  lines.push(line);
+  if (lines.length > MAX_LOG_LINES) lines.splice(0, lines.length - MAX_LOG_LINES);
+  out.textContent = lines.join('\n');
+  if (atBottom) out.scrollTop = out.scrollHeight;
+}
+
+function setLogStatus(text, live) {
+  document.getElementById('logs-status').innerHTML =
+    (live ? '<span class="live-dot"></span>' : '') + text;
+}
+
+async function startLogStream() {
+  await loadLogTail();
+  stopLogStream();
+  logStream = new EventSource('/api/logs/stream');
+  logStream.onopen = () => setLogStatus('ao vivo', true);
+  logStream.onmessage = (e) => appendLogLine(e.data);
+  logStream.onerror = () => setLogStatus('reconectando...', false);
+}
+
+function stopLogStream() {
+  if (logStream) {
+    logStream.close();
+    logStream = null;
+  }
+  setLogStatus('', false);
+}
+
+document.getElementById('logs-refresh-btn').addEventListener('click', loadLogTail);
 
 document.querySelectorAll('[data-cmd]').forEach(btn => {
   btn.addEventListener('click', async () => {

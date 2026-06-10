@@ -38,6 +38,7 @@ type Tailer struct {
 	domains map[string]int
 	clients map[string]int
 	since   time.Time
+	subs    map[chan string]struct{}
 }
 
 // NewTailer creates a Tailer for the log file at path.
@@ -47,6 +48,38 @@ func NewTailer(path string) *Tailer {
 		domains: make(map[string]int),
 		clients: make(map[string]int),
 		since:   time.Now(),
+		subs:    make(map[chan string]struct{}),
+	}
+}
+
+// Subscribe registers a new listener for log lines as they are read. The
+// returned function must be called to unregister the listener and release
+// its channel.
+func (t *Tailer) Subscribe() (<-chan string, func()) {
+	ch := make(chan string, 100)
+	t.mu.Lock()
+	t.subs[ch] = struct{}{}
+	t.mu.Unlock()
+
+	cancel := func() {
+		t.mu.Lock()
+		if _, ok := t.subs[ch]; ok {
+			delete(t.subs, ch)
+			close(ch)
+		}
+		t.mu.Unlock()
+	}
+	return ch, cancel
+}
+
+func (t *Tailer) broadcast(line string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for ch := range t.subs {
+		select {
+		case ch <- line:
+		default:
+		}
 	}
 }
 
@@ -92,6 +125,7 @@ func (t *Tailer) follow() error {
 		line, err := reader.ReadString('\n')
 		if err == nil {
 			t.processLine(line)
+			t.broadcast(strings.TrimRight(line, "\n"))
 			continue
 		}
 
