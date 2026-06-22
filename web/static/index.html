@@ -216,6 +216,7 @@
       <button class="tab-btn" data-tab="stats">Estatisticas</button>
       <button class="tab-btn" data-tab="top">Top consultas</button>
       <button class="tab-btn" data-tab="blocklist">Bloqueios</button>
+      <button class="tab-btn" data-tab="forwardzone">Forward Zones</button>
       <button class="tab-btn" data-tab="dns">Testes DNS</button>
       <button class="tab-btn" data-tab="benchmark">Benchmark</button>
       <button class="tab-btn" data-tab="logs">Log</button>
@@ -358,6 +359,39 @@
           <tbody id="blocklist-body"><tr><td colspan="6">Carregando...</td></tr></tbody>
         </table>
         <div class="row" id="blocklist-pagination"></div>
+      </div>
+    </div>
+
+    <div class="tab-content hidden" id="tab-forwardzone">
+      <div class="panel">
+        <h2>Adicionar forward zone</h2>
+        <p class="hint">
+          Encaminha a resolucao de um dominio para outro(s) resolvedor(es)
+          recursivo(s), em vez da resolucao normal via raiz. Util quando um
+          dominio especifico tem problemas de resolucao iterativa.
+        </p>
+        <form id="forwardzone-form">
+          <div class="row">
+            <input type="text" id="forwardzone-domain" placeholder="dominio (ex: exemplo.com.br)" required>
+            <input type="text" id="forwardzone-addrs" placeholder="IPs separados por virgula (ex: 1.1.1.1, 8.8.8.8)" required>
+            <button type="submit">Adicionar</button>
+          </div>
+          <div class="error hidden" id="forwardzone-error"></div>
+        </form>
+      </div>
+
+      <div class="panel">
+        <h2>Forward zones configuradas</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Dominio</th>
+              <th>Forward-addr</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="forwardzone-body"><tr><td colspan="3">Carregando...</td></tr></tbody>
+        </table>
       </div>
     </div>
 
@@ -621,6 +655,9 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     }
     if (btn.dataset.tab === 'blocklist') {
       refreshBlocklist();
+    }
+    if (btn.dataset.tab === 'forwardzone') {
+      refreshForwardZones();
     }
   });
 });
@@ -1077,6 +1114,74 @@ document.getElementById('blocklist-form').addEventListener('submit', async (e) =
     document.getElementById('blocklist-form').reset();
     refreshBlocklist();
     refreshBlocklistCount();
+  } catch (err) {
+    errorBox.textContent = 'Erro: ' + err.message;
+    errorBox.classList.remove('hidden');
+  }
+});
+
+async function refreshForwardZones() {
+  const body = document.getElementById('forwardzone-body');
+  body.innerHTML = '<tr><td colspan="3">Carregando...</td></tr>';
+  try {
+    const res = await api('/api/forwardzone');
+    renderForwardZones(res.items || []);
+  } catch (err) {
+    body.innerHTML = `<tr><td colspan="3">Erro: ${err.message}</td></tr>`;
+  }
+}
+
+function renderForwardZones(items) {
+  const body = document.getElementById('forwardzone-body');
+  if (items.length === 0) {
+    body.innerHTML = '<tr><td colspan="3">Nenhuma forward zone configurada.</td></tr>';
+    return;
+  }
+  body.innerHTML = '';
+  for (const { domain, forward_addrs } of items) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeHtml(domain)}</td>
+      <td>${escapeHtml((forward_addrs || []).join(', '))}</td>
+      <td><button class="remove-btn" data-domain="${escapeHtml(domain)}">Remover</button></td>
+    `;
+    body.appendChild(tr);
+  }
+}
+
+document.getElementById('forwardzone-body').addEventListener('click', async (e) => {
+  const btn = e.target.closest('.remove-btn');
+  if (!btn) return;
+  const domain = btn.dataset.domain;
+  if (!confirm(`Remover a forward zone de "${domain}"?`)) return;
+  btn.disabled = true;
+  try {
+    await api(`/api/forwardzone/${encodeURIComponent(domain)}`, { method: 'DELETE' });
+    refreshForwardZones();
+  } catch (err) {
+    alert('Erro: ' + err.message);
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('forwardzone-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errorBox = document.getElementById('forwardzone-error');
+  errorBox.classList.add('hidden');
+
+  const domain = document.getElementById('forwardzone-domain').value.trim();
+  const forward_addrs = document.getElementById('forwardzone-addrs').value
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  try {
+    await api('/api/forwardzone', {
+      method: 'POST',
+      body: JSON.stringify({ domain, forward_addrs }),
+    });
+    document.getElementById('forwardzone-form').reset();
+    refreshForwardZones();
   } catch (err) {
     errorBox.textContent = 'Erro: ' + err.message;
     errorBox.classList.remove('hidden');

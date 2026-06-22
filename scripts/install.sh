@@ -174,6 +174,16 @@ if ! grep -q "anatel-blocklist.conf" "$UNBOUND_CONF" 2>/dev/null; then
   printf '\ninclude: "%s"\n' "$BLOCKLIST_FILE" >> "$UNBOUND_CONF"
 fi
 
+echo "==> Setting up forward zones (forwardzone.conf)"
+FORWARDZONE_FILE="${CONF_D}/forwardzone.conf"
+if [ ! -f "$FORWARDZONE_FILE" ]; then
+  : > "$FORWARDZONE_FILE"
+fi
+if ! grep -q "forwardzone.conf" "$UNBOUND_CONF" 2>/dev/null; then
+  cp "$UNBOUND_CONF" "${UNBOUND_CONF}.bak.$(date +%s)"
+  printf '\ninclude: "%s"\n' "$FORWARDZONE_FILE" >> "$UNBOUND_CONF"
+fi
+
 echo "==> Writing config"
 mkdir -p /etc/unbound-dash
 CONFIG_PATH="/etc/unbound-dash/config.json"
@@ -210,6 +220,7 @@ cat > "$CONFIG_PATH" <<EOF
   "unbound_conf": "${UNBOUND_CONF}",
   "unbound_log_file": "${UNBOUND_LOG_FILE}",
   "blocklist_file": "${BLOCKLIST_FILE}",
+  "forward_zone_file": "${FORWARDZONE_FILE}",
   "pdftotext_bin": "${PDFTOTEXT_BIN}",
   "admin_password": "${ADMIN_PASSWORD}"
 }

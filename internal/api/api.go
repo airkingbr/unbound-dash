@@ -15,6 +15,7 @@ import (
 	"github.com/airkingbr/unbound-dash/internal/auth"
 	"github.com/airkingbr/unbound-dash/internal/blocklist"
 	"github.com/airkingbr/unbound-dash/internal/config"
+	"github.com/airkingbr/unbound-dash/internal/forwardzone"
 	"github.com/airkingbr/unbound-dash/internal/querylog"
 	"github.com/airkingbr/unbound-dash/internal/unboundctl"
 )
@@ -52,6 +53,10 @@ func (s *Server) Routes() http.Handler {
 	protected.HandleFunc("POST /api/blocklist", s.handleAddBlocklist)
 	protected.HandleFunc("DELETE /api/blocklist/{domain}", s.handleDeleteBlocklist)
 	protected.HandleFunc("POST /api/blocklist/bulk-delete", s.handleBulkDeleteBlocklist)
+	protected.HandleFunc("GET /api/forwardzone", s.handleListForwardZones)
+	protected.HandleFunc("POST /api/forwardzone", s.handleAddForwardZone)
+	protected.HandleFunc("PUT /api/forwardzone/{domain}", s.handleUpdateForwardZone)
+	protected.HandleFunc("DELETE /api/forwardzone/{domain}", s.handleDeleteForwardZone)
 	protected.HandleFunc("POST /api/oficio/parse", s.handleOficioParse)
 	protected.HandleFunc("POST /api/oficio/apply", s.handleOficioApply)
 	protected.HandleFunc("POST /api/control/{command}", s.handleControl)
@@ -361,6 +366,144 @@ func (s *Server) handleBulkDeleteBlocklist(w http.ResponseWriter, r *http.Reques
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"removed": removed})
+}
+
+func (s *Server) handleListForwardZones(w http.ResponseWriter, _ *http.Request) {
+	entries, err := forwardzone.Load(s.cfg.ForwardZoneFile)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": entries})
+}
+
+func validForwardAddrs(addrs []string) bool {
+	if len(addrs) == 0 {
+		return false
+	}
+	for _, a := range addrs {
+		if !forwardzone.ValidAddr(a) {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Server) handleAddForwardZone(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Domain       string   `json:"domain"`
+		ForwardAddrs []string `json:"forward_addrs"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	domain := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(req.Domain), "."))
+	if !blocklist.ValidDomain(domain) {
+		writeError(w, http.StatusBadRequest, "dominio invalido")
+		return
+	}
+	if !validForwardAddrs(req.ForwardAddrs) {
+		writeError(w, http.StatusBadRequest, "informe ao menos um endereco IP valido")
+		return
+	}
+
+	entries, err := forwardzone.Load(s.cfg.ForwardZoneFile)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	for _, e := range entries {
+		if e.Domain == domain {
+			writeError(w, http.StatusConflict, "dominio ja possui forward-zone configurada")
+			return
+		}
+	}
+	entries = append(entries, forwardzone.Entry{Domain: domain, ForwardAddrs: req.ForwardAddrs})
+
+	if err := forwardzone.Save(s.cfg.ForwardZoneFile, entries); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.reloadUnbound()
+	s.flushZone(domain)
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleUpdateForwardZone(w http.ResponseWriter, r *http.Request) {
+	domain := strings.ToLower(strings.TrimSuffix(r.PathValue("domain"), "."))
+
+	var req struct {
+		ForwardAddrs []string `json:"forward_addrs"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if !validForwardAddrs(req.ForwardAddrs) {
+		writeError(w, http.StatusBadRequest, "informe ao menos um endereco IP valido")
+		return
+	}
+
+	entries, err := forwardzone.Load(s.cfg.ForwardZoneFile)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	found := false
+	for i, e := range entries {
+		if e.Domain == domain {
+			entries[i].ForwardAddrs = req.ForwardAddrs
+			found = true
+			break
+		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "dominio nao encontrado nas forward-zones")
+		return
+	}
+
+	if err := forwardzone.Save(s.cfg.ForwardZoneFile, entries); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.reloadUnbound()
+	s.flushZone(domain)
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleDeleteForwardZone(w http.ResponseWriter, r *http.Request) {
+	domain := strings.ToLower(strings.TrimSuffix(r.PathValue("domain"), "."))
+
+	entries, err := forwardzone.Load(s.cfg.ForwardZoneFile)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	out := entries[:0]
+	found := false
+	for _, e := range entries {
+		if e.Domain == domain {
+			found = true
+			continue
+		}
+		out = append(out, e)
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "dominio nao encontrado nas forward-zones")
+		return
+	}
+
+	if err := forwardzone.Save(s.cfg.ForwardZoneFile, out); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.reloadUnbound()
+	s.flushZone(domain)
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (s *Server) reloadUnbound() {

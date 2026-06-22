@@ -15,6 +15,7 @@ type Config struct {
 	UnboundConf       string `json:"unbound_conf"`
 	UnboundLogFile    string `json:"unbound_log_file"`
 	BlocklistFile     string `json:"blocklist_file"`
+	ForwardZoneFile   string `json:"forward_zone_file"`
 	PdftotextBin      string `json:"pdftotext_bin"`
 	AdminPassword     string `json:"admin_password"`
 	SessionSecret     string `json:"session_secret"`
@@ -27,6 +28,7 @@ func defaults() Config {
 		UnboundConf:       "/etc/unbound/unbound.conf",
 		UnboundLogFile:    "/var/log/unbound/unbound.log",
 		BlocklistFile:     "/etc/unbound/unbound.conf.d/anatel-blocklist.conf",
+		ForwardZoneFile:   "/etc/unbound/unbound.conf.d/forwardzone.conf",
 		PdftotextBin:      "pdftotext",
 	}
 }

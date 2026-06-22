@@ -15,6 +15,7 @@ Esqueleto inicial:
 - [x] API HTTP (login com sessão, `/api/stats`, `/api/status`, `/api/control/{cmd}`)
 - [x] Frontend single-page (gráfico de QPS/cache hit, cards de estatísticas, painel de controle)
 - [x] Cards de status mostram versão e uptime do Unbound; rodapé mostra a versão do unbound-dash em execução
+- [x] Forward zones: encaminha a resolução de domínios específicos para outros resolvedores recursivos
 - [x] Instalador (`scripts/install.sh`) + unit systemd
 - [x] Gerência de blocklist (`anatel-blocklist.conf`), com importação de ofícios em PDF
 - [x] Log do Unbound ao vivo (streaming)
@@ -167,6 +168,32 @@ A aba **Bloqueios** gerencia o arquivo `anatel-blocklist.conf` (lista de
 
 Toda alteração na blocklist recarrega o Unbound (`reload`) e limpa o cache
 (`flush_zone`) para que o bloqueio/desbloqueio tenha efeito imediato.
+
+## Forward zones
+
+A aba **Forward Zones** gerencia o arquivo `forwardzone.conf` (incluído no
+`unbound.conf`), que encaminha a resolução de domínios específicos para
+outro(s) resolvedor(es) recursivo(s) em vez do caminho normal via raiz —
+útil quando um domínio específico tem problemas de resolução iterativa
+(ex: lentidão ou falha intermitente resolvendo direto pela raiz).
+
+Cada entrada tem um domínio e uma lista de IPs (`forward-addr`), gerando
+um bloco no formato nativo do Unbound:
+
+```
+forward-zone:
+    name: "exemplo.com.br."
+    forward-addr: 1.1.1.1
+    forward-addr: 8.8.8.8
+```
+
+Toda alteração recarrega o Unbound (`reload`) e limpa o cache da zona
+afetada (`flush_zone`) para que o encaminhamento tenha efeito imediato.
+
+Em servidores que já tinham o unbound-dash instalado antes desse recurso,
+basta rodar `sudo update-unbound-dash` — o `update.sh` cria o
+`forwardzone.conf`, adiciona o include no `unbound.conf` e recarrega o
+Unbound automaticamente.
 
 ## Testes DNS
 

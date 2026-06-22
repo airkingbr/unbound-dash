@@ -90,6 +90,33 @@ fi
 
 chmod +x "$TMP_FILE"
 
+echo "==> Checking forward zones support (forwardzone.conf)"
+CONFIG_PATH="/etc/unbound-dash/config.json"
+UNBOUND_CONF="/etc/unbound/unbound.conf"
+if [ -f "$CONFIG_PATH" ]; then
+  CONF_FROM_CONFIG="$(grep -o '"unbound_conf": *"[^"]*"' "$CONFIG_PATH" | sed -E 's/.*"([^"]*)"$/\1/' || true)"
+  [ -n "$CONF_FROM_CONFIG" ] && UNBOUND_CONF="$CONF_FROM_CONFIG"
+fi
+FORWARDZONE_FILE="$(dirname "$UNBOUND_CONF")/unbound.conf.d/forwardzone.conf"
+if [ -f "$CONFIG_PATH" ]; then
+  FZ_FROM_CONFIG="$(grep -o '"forward_zone_file": *"[^"]*"' "$CONFIG_PATH" | sed -E 's/.*"([^"]*)"$/\1/' || true)"
+  [ -n "$FZ_FROM_CONFIG" ] && FORWARDZONE_FILE="$FZ_FROM_CONFIG"
+fi
+if [ -f "$UNBOUND_CONF" ]; then
+  mkdir -p "$(dirname "$FORWARDZONE_FILE")"
+  if [ ! -f "$FORWARDZONE_FILE" ]; then
+    : > "$FORWARDZONE_FILE"
+  fi
+  if ! grep -q "forwardzone.conf" "$UNBOUND_CONF" 2>/dev/null; then
+    cp "$UNBOUND_CONF" "${UNBOUND_CONF}.bak.$(date +%s)"
+    printf '\ninclude: "%s"\n' "$FORWARDZONE_FILE" >> "$UNBOUND_CONF"
+  fi
+  if [ -f "$CONFIG_PATH" ] && ! grep -q "forward_zone_file" "$CONFIG_PATH"; then
+    sed -i "s#\"blocklist_file\":#\"forward_zone_file\": \"${FORWARDZONE_FILE}\",\n  \"blocklist_file\":#" "$CONFIG_PATH"
+  fi
+  unbound-control reload >/dev/null 2>&1 || true
+fi
+
 CURRENT_VERSION="$("$BIN_PATH" -version 2>&1 || true)"
 NEW_VERSION="$("$TMP_FILE" -version 2>&1 || true)"
 if [ -n "$CURRENT_VERSION" ] || [ -n "$NEW_VERSION" ]; then
