@@ -16,6 +16,7 @@ Esqueleto inicial:
 - [x] Frontend single-page (gráfico de QPS/cache hit, cards de estatísticas, painel de controle)
 - [x] Cards de status mostram versão e uptime do Unbound; rodapé mostra a versão do unbound-dash em execução
 - [x] Forward zones: encaminha a resolução de domínios específicos para outros resolvedores recursivos
+- [x] Entradas estáticas: fixa um domínio em IPv4/IPv6 fixos
 - [x] Instalador (`scripts/install.sh`) + unit systemd
 - [x] Gerência de blocklist (`anatel-blocklist.conf`), com importação de ofícios em PDF
 - [x] Log do Unbound ao vivo (streaming)
@@ -194,6 +195,27 @@ Em servidores que já tinham o unbound-dash instalado antes desse recurso,
 basta rodar `sudo update-unbound-dash` — o `update.sh` cria o
 `forwardzone.conf`, adiciona o include no `unbound.conf` e recarrega o
 Unbound automaticamente.
+
+## Entradas estáticas
+
+A aba **Entradas Estaticas** gerencia o arquivo `staticentries.conf`
+(incluído no `unbound.conf`), que fixa um domínio em um IPv4 e/ou IPv6 fixo
+em vez de resolvê-lo normalmente — útil para manter um domínio funcionando
+mesmo que o DNS real dele mude ou fique inacessível.
+
+Ao adicionar, escolha o host e o tipo (IPv4, IPv6 ou ambos), gerando um
+bloco no formato nativo do Unbound:
+
+```
+local-zone: "exemplo.com." static
+local-data: "exemplo.com. IN A 203.0.113.10"
+local-data: "exemplo.com. IN AAAA 2001:db8::10"
+```
+
+Toda alteração recarrega o Unbound (`reload`) e limpa o cache da zona
+afetada (`flush_zone`). Em servidores que já tinham o unbound-dash
+instalado antes desse recurso, `sudo update-unbound-dash` cria o
+`staticentries.conf` e adiciona o include automaticamente.
 
 ## Testes DNS
 

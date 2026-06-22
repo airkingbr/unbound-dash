@@ -90,32 +90,52 @@ fi
 
 chmod +x "$TMP_FILE"
 
-echo "==> Checking forward zones support (forwardzone.conf)"
 CONFIG_PATH="/etc/unbound-dash/config.json"
 UNBOUND_CONF="/etc/unbound/unbound.conf"
 if [ -f "$CONFIG_PATH" ]; then
   CONF_FROM_CONFIG="$(grep -o '"unbound_conf": *"[^"]*"' "$CONFIG_PATH" | sed -E 's/.*"([^"]*)"$/\1/' || true)"
   [ -n "$CONF_FROM_CONFIG" ] && UNBOUND_CONF="$CONF_FROM_CONFIG"
 fi
-FORWARDZONE_FILE="$(dirname "$UNBOUND_CONF")/unbound.conf.d/forwardzone.conf"
-if [ -f "$CONFIG_PATH" ]; then
-  FZ_FROM_CONFIG="$(grep -o '"forward_zone_file": *"[^"]*"' "$CONFIG_PATH" | sed -E 's/.*"([^"]*)"$/\1/' || true)"
-  [ -n "$FZ_FROM_CONFIG" ] && FORWARDZONE_FILE="$FZ_FROM_CONFIG"
-fi
-if [ -f "$UNBOUND_CONF" ]; then
-  mkdir -p "$(dirname "$FORWARDZONE_FILE")"
-  if [ ! -f "$FORWARDZONE_FILE" ]; then
-    : > "$FORWARDZONE_FILE"
+
+# ensure_include creates the given conf.d file (if missing), includes it in
+# unbound.conf (if not already included) and records its path under
+# json_key in config.json -- used to retrofit features added after a
+# server's first install without requiring a full reinstall.
+ensure_include() {
+  file_name="$1"
+  json_key="$2"
+  default_value="$(dirname "$UNBOUND_CONF")/unbound.conf.d/${file_name}"
+
+  value="$default_value"
+  if [ -f "$CONFIG_PATH" ]; then
+    from_config="$(grep -o "\"${json_key}\": *\"[^\"]*\"" "$CONFIG_PATH" | sed -E 's/.*"([^"]*)"$/\1/' || true)"
+    [ -n "$from_config" ] && value="$from_config"
   fi
-  if ! grep -q "forwardzone.conf" "$UNBOUND_CONF" 2>/dev/null; then
+
+  if [ ! -f "$UNBOUND_CONF" ]; then
+    return
+  fi
+
+  mkdir -p "$(dirname "$value")"
+  if [ ! -f "$value" ]; then
+    : > "$value"
+  fi
+  if ! grep -q "$file_name" "$UNBOUND_CONF" 2>/dev/null; then
     cp "$UNBOUND_CONF" "${UNBOUND_CONF}.bak.$(date +%s)"
-    printf '\ninclude: "%s"\n' "$FORWARDZONE_FILE" >> "$UNBOUND_CONF"
+    printf '\ninclude: "%s"\n' "$value" >> "$UNBOUND_CONF"
   fi
-  if [ -f "$CONFIG_PATH" ] && ! grep -q "forward_zone_file" "$CONFIG_PATH"; then
-    sed -i "s#\"blocklist_file\":#\"forward_zone_file\": \"${FORWARDZONE_FILE}\",\n  \"blocklist_file\":#" "$CONFIG_PATH"
+  if [ -f "$CONFIG_PATH" ] && ! grep -q "\"${json_key}\"" "$CONFIG_PATH"; then
+    sed -i "s#\"blocklist_file\":#\"${json_key}\": \"${value}\",\n  \"blocklist_file\":#" "$CONFIG_PATH"
   fi
-  unbound-control reload >/dev/null 2>&1 || true
-fi
+}
+
+echo "==> Checking forward zones support (forwardzone.conf)"
+ensure_include "forwardzone.conf" "forward_zone_file"
+
+echo "==> Checking static entries support (staticentries.conf)"
+ensure_include "staticentries.conf" "static_entry_file"
+
+unbound-control reload >/dev/null 2>&1 || true
 
 CURRENT_VERSION="$("$BIN_PATH" -version 2>&1 || true)"
 NEW_VERSION="$("$TMP_FILE" -version 2>&1 || true)"

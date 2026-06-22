@@ -217,6 +217,7 @@
       <button class="tab-btn" data-tab="top">Top consultas</button>
       <button class="tab-btn" data-tab="blocklist">Bloqueios</button>
       <button class="tab-btn" data-tab="forwardzone">Forward Zones</button>
+      <button class="tab-btn" data-tab="staticentry">Entradas Estaticas</button>
       <button class="tab-btn" data-tab="dns">Testes DNS</button>
       <button class="tab-btn" data-tab="benchmark">Benchmark</button>
       <button class="tab-btn" data-tab="logs">Log</button>
@@ -391,6 +392,46 @@
             </tr>
           </thead>
           <tbody id="forwardzone-body"><tr><td colspan="3">Carregando...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="tab-content hidden" id="tab-staticentry">
+      <div class="panel">
+        <h2>Adicionar entrada estatica</h2>
+        <p class="hint">
+          Fixa um dominio em um ou mais IPs, em vez de resolve-lo
+          normalmente. Util para manter um dominio funcionando mesmo se o
+          DNS real dele mudar ou ficar inacessivel.
+        </p>
+        <form id="staticentry-form">
+          <div class="row">
+            <input type="text" id="staticentry-domain" placeholder="host (ex: t.co)" required>
+            <select id="staticentry-type">
+              <option value="ipv4">IPv4</option>
+              <option value="ipv6">IPv6</option>
+              <option value="both">IPv4 e IPv6</option>
+            </select>
+            <input type="text" id="staticentry-ipv4" placeholder="IPv4 (ex: 162.159.140.229)">
+            <input type="text" id="staticentry-ipv6" placeholder="IPv6 (ex: 2606:50c0:8000::153)" class="hidden">
+            <button type="submit">Adicionar</button>
+          </div>
+          <div class="error hidden" id="staticentry-error"></div>
+        </form>
+      </div>
+
+      <div class="panel">
+        <h2>Entradas estaticas configuradas</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Host</th>
+              <th>IPv4</th>
+              <th>IPv6</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="staticentry-body"><tr><td colspan="4">Carregando...</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -658,6 +699,9 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     }
     if (btn.dataset.tab === 'forwardzone') {
       refreshForwardZones();
+    }
+    if (btn.dataset.tab === 'staticentry') {
+      refreshStaticEntries();
     }
   });
 });
@@ -1182,6 +1226,82 @@ document.getElementById('forwardzone-form').addEventListener('submit', async (e)
     });
     document.getElementById('forwardzone-form').reset();
     refreshForwardZones();
+  } catch (err) {
+    errorBox.textContent = 'Erro: ' + err.message;
+    errorBox.classList.remove('hidden');
+  }
+});
+
+document.getElementById('staticentry-type').addEventListener('change', (e) => {
+  const ipv4Input = document.getElementById('staticentry-ipv4');
+  const ipv6Input = document.getElementById('staticentry-ipv6');
+  ipv4Input.classList.toggle('hidden', e.target.value === 'ipv6');
+  ipv6Input.classList.toggle('hidden', e.target.value === 'ipv4');
+});
+
+async function refreshStaticEntries() {
+  const body = document.getElementById('staticentry-body');
+  body.innerHTML = '<tr><td colspan="4">Carregando...</td></tr>';
+  try {
+    const res = await api('/api/staticentry');
+    renderStaticEntries(res.items || []);
+  } catch (err) {
+    body.innerHTML = `<tr><td colspan="4">Erro: ${err.message}</td></tr>`;
+  }
+}
+
+function renderStaticEntries(items) {
+  const body = document.getElementById('staticentry-body');
+  if (items.length === 0) {
+    body.innerHTML = '<tr><td colspan="4">Nenhuma entrada estatica configurada.</td></tr>';
+    return;
+  }
+  body.innerHTML = '';
+  for (const { domain, ipv4, ipv6 } of items) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeHtml(domain)}</td>
+      <td>${escapeHtml(ipv4 || '-')}</td>
+      <td>${escapeHtml(ipv6 || '-')}</td>
+      <td><button class="remove-btn" data-domain="${escapeHtml(domain)}">Remover</button></td>
+    `;
+    body.appendChild(tr);
+  }
+}
+
+document.getElementById('staticentry-body').addEventListener('click', async (e) => {
+  const btn = e.target.closest('.remove-btn');
+  if (!btn) return;
+  const domain = btn.dataset.domain;
+  if (!confirm(`Remover a entrada estatica de "${domain}"?`)) return;
+  btn.disabled = true;
+  try {
+    await api(`/api/staticentry/${encodeURIComponent(domain)}`, { method: 'DELETE' });
+    refreshStaticEntries();
+  } catch (err) {
+    alert('Erro: ' + err.message);
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('staticentry-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errorBox = document.getElementById('staticentry-error');
+  errorBox.classList.add('hidden');
+
+  const domain = document.getElementById('staticentry-domain').value.trim();
+  const type = document.getElementById('staticentry-type').value;
+  const ipv4 = type !== 'ipv6' ? document.getElementById('staticentry-ipv4').value.trim() : '';
+  const ipv6 = type !== 'ipv4' ? document.getElementById('staticentry-ipv6').value.trim() : '';
+
+  try {
+    await api('/api/staticentry', {
+      method: 'POST',
+      body: JSON.stringify({ domain, ipv4, ipv6 }),
+    });
+    document.getElementById('staticentry-form').reset();
+    document.getElementById('staticentry-ipv6').classList.add('hidden');
+    refreshStaticEntries();
   } catch (err) {
     errorBox.textContent = 'Erro: ' + err.message;
     errorBox.classList.remove('hidden');

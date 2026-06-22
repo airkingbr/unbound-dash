@@ -184,6 +184,16 @@ if ! grep -q "forwardzone.conf" "$UNBOUND_CONF" 2>/dev/null; then
   printf '\ninclude: "%s"\n' "$FORWARDZONE_FILE" >> "$UNBOUND_CONF"
 fi
 
+echo "==> Setting up static entries (staticentries.conf)"
+STATICENTRY_FILE="${CONF_D}/staticentries.conf"
+if [ ! -f "$STATICENTRY_FILE" ]; then
+  : > "$STATICENTRY_FILE"
+fi
+if ! grep -q "staticentries.conf" "$UNBOUND_CONF" 2>/dev/null; then
+  cp "$UNBOUND_CONF" "${UNBOUND_CONF}.bak.$(date +%s)"
+  printf '\ninclude: "%s"\n' "$STATICENTRY_FILE" >> "$UNBOUND_CONF"
+fi
+
 echo "==> Writing config"
 mkdir -p /etc/unbound-dash
 CONFIG_PATH="/etc/unbound-dash/config.json"
@@ -221,6 +231,7 @@ cat > "$CONFIG_PATH" <<EOF
   "unbound_log_file": "${UNBOUND_LOG_FILE}",
   "blocklist_file": "${BLOCKLIST_FILE}",
   "forward_zone_file": "${FORWARDZONE_FILE}",
+  "static_entry_file": "${STATICENTRY_FILE}",
   "pdftotext_bin": "${PDFTOTEXT_BIN}",
   "admin_password": "${ADMIN_PASSWORD}"
 }
