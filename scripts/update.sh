@@ -32,6 +32,30 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
+# update.sh is copied to /usr/local/bin/update-unbound-dash at install time
+# and never touched again, so a server installed before some update.sh
+# improvement (e.g. forward zones, static entries support) would keep
+# running the stale logic forever. Re-fetch the latest update.sh and
+# re-exec it before doing anything else, best-effort (skipped if offline
+# or if GITHUB_TOKEN is required and not set).
+if [ -z "${UNBOUND_DASH_SELF_UPDATED:-}" ]; then
+  SELF_PATH="/usr/local/bin/update-unbound-dash"
+  CURL_AUTH=()
+  if [ -n "${GITHUB_TOKEN:-}" ]; then
+    CURL_AUTH=(-H "Authorization: token ${GITHUB_TOKEN}")
+  fi
+  TMP_SELF="$(mktemp)"
+  if curl -fsSL "${CURL_AUTH[@]}" -H "Accept: application/vnd.github.raw" \
+       -o "$TMP_SELF" "https://api.github.com/repos/${REPO}/contents/scripts/update.sh" 2>/dev/null \
+     && [ -s "$TMP_SELF" ] && [ -f "$SELF_PATH" ] && ! cmp -s "$TMP_SELF" "$SELF_PATH"; then
+    echo "==> update.sh tinha uma versao mais nova; atualizando e reexecutando"
+    install -m 0755 "$TMP_SELF" "$SELF_PATH"
+    rm -f "$TMP_SELF"
+    exec env UNBOUND_DASH_SELF_UPDATED=1 bash "$SELF_PATH" "$@"
+  fi
+  rm -f "$TMP_SELF"
+fi
+
 ARCH="$(dpkg --print-architecture)"
 case "$ARCH" in
   amd64) GOARCH="amd64" ;;
