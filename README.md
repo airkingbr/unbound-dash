@@ -41,6 +41,17 @@ O instalador:
 
 Por padrão a interface fica disponível em `http://SEU_SERVIDOR:8080`.
 
+O instalador também habilita `log-queries: yes` no Unbound (necessário para
+as abas de Top consultas/clientes) e configura rotação do log
+(`/etc/logrotate.d/unbound-dash`, por tamanho — `size 200M` — verificada a
+cada hora via `/etc/cron.hourly/unbound-dash-logrotate`, não apenas uma vez
+por dia), para evitar que o log cresça sem controle e encha o disco. Um
+disco cheio impede o Unbound de regravar `/var/lib/unbound/root.key`
+(trust anchor), o que quebra o `unbound-checkconf`/`unbound-control
+status` com erro "failed to read /var/lib/unbound/root.key" — se isso
+acontecer, libere espaço em disco e rode `unbound-anchor -a
+/var/lib/unbound/root.key` para recriar o arquivo.
+
 ### Opções
 
 ```bash

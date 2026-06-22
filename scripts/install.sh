@@ -141,17 +141,28 @@ if [ -z "$UNBOUND_LOG_FILE" ]; then
 fi
 
 echo "==> Configuring log rotation for ${UNBOUND_LOG_FILE}"
+# Rotated by size (not just daily) and checked hourly: with log-queries
+# enabled, query volume can fill the disk in days if rotation only runs
+# once a day, which then breaks unrelated things (e.g. Unbound failing to
+# rewrite /var/lib/unbound/root.key when the disk is full).
 cat > /etc/logrotate.d/unbound-dash <<EOF
 ${UNBOUND_LOG_FILE} {
-    daily
-    rotate 7
+    size 200M
+    rotate 4
     missingok
     notifempty
     compress
     delaycompress
     copytruncate
+    dateext
 }
 EOF
+
+cat > /etc/cron.hourly/unbound-dash-logrotate <<EOF
+#!/bin/sh
+exec /usr/sbin/logrotate /etc/logrotate.d/unbound-dash
+EOF
+chmod 0755 /etc/cron.hourly/unbound-dash-logrotate
 
 echo "==> Setting up domain blocklist (anatel-blocklist.conf)"
 BLOCKLIST_FILE="${CONF_D}/anatel-blocklist.conf"
