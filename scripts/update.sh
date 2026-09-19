@@ -153,11 +153,45 @@ ensure_include() {
   fi
 }
 
+echo "==> Installing root.key guard (prevents Unbound from failing to start when root.key is empty)"
+mkdir -p /etc/systemd/system/unbound.service.d
+cat > /etc/systemd/system/unbound.service.d/rootkey-guard.conf <<'GUARDEOF'
+[Service]
+ExecStartPre=/bin/bash -c 'f=/var/lib/unbound/root.key; if [ ! -s "$f" ]; then echo "root.key vazio ou ausente, regenerando..."; unbound-anchor -a "$f" 2>/dev/null; fi; exit 0'
+GUARDEOF
+systemctl daemon-reload
+
 echo "==> Checking forward zones support (forwardzone.conf)"
 ensure_include "forwardzone.conf" "forward_zone_file"
 
 echo "==> Checking static entries support (staticentries.conf)"
 ensure_include "staticentries.conf" "static_entry_file"
+
+# Fix logrotate if it still uses copytruncate: copytruncate needs free space
+# equal to the log size before truncating -- silently fails on a full disk,
+# letting the log grow until it fills the disk again.  Replace with
+# create+postrotate (rename the file, create a fresh one, signal Unbound to
+# reopen it) which uses virtually no extra disk space.
+if [ -f /etc/logrotate.d/unbound-dash ] && grep -q "copytruncate" /etc/logrotate.d/unbound-dash; then
+  echo "==> Upgrading logrotate config (replacing copytruncate with create+log_reopen)"
+  LOGFILE_LINE="$(head -1 /etc/logrotate.d/unbound-dash)"
+  LOGFILE_PATH="$(echo "$LOGFILE_LINE" | sed 's/ {.*//' | tr -d ' ')"
+  tee /etc/logrotate.d/unbound-dash > /dev/null << LOGROTATEOF
+${LOGFILE_PATH} {
+    size 200M
+    rotate 4
+    missingok
+    notifempty
+    compress
+    delaycompress
+    dateext
+    create 640 unbound adm
+    postrotate
+        /usr/sbin/unbound-control log_reopen 2>/dev/null || true
+    endscript
+}
+LOGROTATEOF
+fi
 
 unbound-control reload >/dev/null 2>&1 || true
 

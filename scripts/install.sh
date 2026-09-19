@@ -145,6 +145,10 @@ echo "==> Configuring log rotation for ${UNBOUND_LOG_FILE}"
 # enabled, query volume can fill the disk in days if rotation only runs
 # once a day, which then breaks unrelated things (e.g. Unbound failing to
 # rewrite /var/lib/unbound/root.key when the disk is full).
+# Uses create+postrotate (rename + new file + log_reopen) instead of
+# copytruncate: copytruncate needs free space equal to the log size to
+# make a copy before truncating -- on a full disk it silently fails and
+# the log keeps growing.
 cat > /etc/logrotate.d/unbound-dash <<EOF
 ${UNBOUND_LOG_FILE} {
     size 200M
@@ -153,8 +157,11 @@ ${UNBOUND_LOG_FILE} {
     notifempty
     compress
     delaycompress
-    copytruncate
     dateext
+    create 640 unbound adm
+    postrotate
+        /usr/sbin/unbound-control log_reopen 2>/dev/null || true
+    endscript
 }
 EOF
 
@@ -163,6 +170,14 @@ cat > /etc/cron.hourly/unbound-dash-logrotate <<EOF
 exec /usr/sbin/logrotate /etc/logrotate.d/unbound-dash
 EOF
 chmod 0755 /etc/cron.hourly/unbound-dash-logrotate
+
+echo "==> Installing root.key guard (prevents Unbound from failing to start when root.key is empty)"
+mkdir -p /etc/systemd/system/unbound.service.d
+cat > /etc/systemd/system/unbound.service.d/rootkey-guard.conf <<'GUARDEOF'
+[Service]
+ExecStartPre=/bin/bash -c 'f=/var/lib/unbound/root.key; if [ ! -s "$f" ]; then echo "root.key vazio ou ausente, regenerando..."; unbound-anchor -a "$f" 2>/dev/null; fi; exit 0'
+GUARDEOF
+systemctl daemon-reload
 
 echo "==> Setting up domain blocklist (anatel-blocklist.conf)"
 BLOCKLIST_FILE="${CONF_D}/anatel-blocklist.conf"
