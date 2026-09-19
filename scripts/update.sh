@@ -153,6 +153,12 @@ ensure_include() {
   fi
 }
 
+if [ -f /etc/systemd/system/unbound.service.d/rootkey-guard.conf ]; then
+  echo "==> Removing rootkey-guard (desnecessario; correcao real e no logrotate)"
+  rm /etc/systemd/system/unbound.service.d/rootkey-guard.conf
+  systemctl daemon-reload
+fi
+
 echo "==> Checking forward zones support (forwardzone.conf)"
 ensure_include "forwardzone.conf" "forward_zone_file"
 
