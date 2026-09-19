@@ -153,14 +153,6 @@ ensure_include() {
   fi
 }
 
-echo "==> Installing root.key guard (prevents Unbound from failing to start when root.key is empty)"
-mkdir -p /etc/systemd/system/unbound.service.d
-cat > /etc/systemd/system/unbound.service.d/rootkey-guard.conf <<'GUARDEOF'
-[Service]
-ExecStartPre=/bin/bash -c 'f=/var/lib/unbound/root.key; if [ ! -s "$f" ]; then echo "root.key vazio ou ausente, regenerando..."; unbound-anchor -a "$f" 2>/dev/null; fi; exit 0'
-GUARDEOF
-systemctl daemon-reload
-
 echo "==> Checking forward zones support (forwardzone.conf)"
 ensure_include "forwardzone.conf" "forward_zone_file"
 
