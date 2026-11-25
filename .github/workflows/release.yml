@@ -21,6 +21,10 @@ jobs:
         with:
           go-version: "1.26"
 
+      - name: Test
+        if: matrix.goarch == 'amd64'
+        run: go test ./...
+
       - name: Build
         env:
           GOOS: linux
@@ -31,7 +35,23 @@ jobs:
           go build -trimpath -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" \
             -o dist/unbound-dash_linux_${GOARCH} ./cmd/unbound-dash
 
-      - name: Upload release asset
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unbound-dash_linux_${{ matrix.goarch }}
+          path: dist/unbound-dash_linux_${{ matrix.goarch }}
+
+  # A single job creates the release and uploads every binary, so the
+  # matrix jobs no longer race to create the same release.
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/unbound-dash_linux_${{ matrix.goarch }}
+          files: dist/unbound-dash_linux_*
