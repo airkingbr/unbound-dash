@@ -126,7 +126,8 @@
     font-family: "JetBrains Mono", Consolas, monospace; color: var(--muted);
   }
 
-  .two-col { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 24px; }
+  .two-col { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 24px; margin-bottom: 24px; }
+  .two-col > .panel { margin-bottom: 0; }
 
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   table th, table td {
@@ -222,6 +223,7 @@
       <button class="tab-btn" data-tab="dns">Testes DNS</button>
       <button class="tab-btn" data-tab="benchmark">Benchmark</button>
       <button class="tab-btn" data-tab="logs">Log</button>
+      <button class="tab-btn" data-tab="control">Controle</button>
     </div>
     <button id="logout-btn">Sair</button>
   </header>
@@ -233,35 +235,65 @@
         <h2>Consultas por segundo</h2>
         <canvas id="qps-chart" height="80"></canvas>
       </div>
+    </div>
+
+    <div class="tab-content hidden" id="tab-control">
+      <div class="two-col">
+        <div class="panel">
+          <h2>Servidor</h2>
+          <p class="hint">Estado e manutencao geral do Unbound.</p>
+          <div class="row">
+            <button data-cmd="status">Status</button>
+            <button data-cmd="dump_cache">Dump cache</button>
+            <button data-cmd="flush_requestlist">Flush request list</button>
+          </div>
+          <div class="row">
+            <button data-cmd="reload" class="danger"
+              data-confirm="Reload rele a configuracao e APAGA TODO O CACHE do Unbound (pico de recursao para os assinantes). Continuar?">Reload</button>
+          </div>
+          <p class="hint">Reload apaga o cache inteiro. Bloqueios, forward zones e entradas estaticas sao aplicados sem precisar dele.</p>
+        </div>
+
+        <div class="panel">
+          <h2>Limpar cache</h2>
+          <p class="hint">Remove do cache um nome, uma zona inteira ou um tipo de registro.</p>
+          <div class="row">
+            <input type="text" id="flush-name" placeholder="dominio (ex: exemplo.com)">
+            <button data-cmd="flush" data-args="flush-name">Flush nome</button>
+            <button data-cmd="flush_zone" data-args="flush-name" class="danger">Flush zona</button>
+          </div>
+          <div class="row">
+            <input type="text" id="flush-type-name" placeholder="dominio">
+            <input type="text" id="flush-type-type" placeholder="tipo (ex: AAAA)">
+            <button data-cmd="flush_type" data-args="flush-type-name,flush-type-type">Flush tipo</button>
+          </div>
+          <div class="row">
+            <button data-cmd="flush_bogus" class="danger">Flush bogus</button>
+            <button data-cmd="flush_negative" class="danger">Flush negative</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Infraestrutura</h2>
+          <p class="hint">Esquece o que o Unbound aprendeu sobre um servidor autoritativo (RTT, lame, EDNS).</p>
+          <div class="row">
+            <input type="text" id="flush-infra-ip" placeholder="IP (ou 'all')">
+            <button data-cmd="flush_infra" data-args="flush-infra-ip">Flush infra</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Log</h2>
+          <p class="hint">Nivel de detalhe do log (0-5). Vale ate o proximo restart/reload.</p>
+          <div class="row">
+            <input type="text" id="verbosity-level" placeholder="nivel (0-5)">
+            <button data-cmd="verbosity" data-args="verbosity-level">Set verbosity</button>
+          </div>
+        </div>
+      </div>
 
       <div class="panel">
-        <h2>Controle (unbound-control)</h2>
-        <div class="row">
-          <button data-cmd="reload">Reload</button>
-          <button data-cmd="status">Status</button>
-          <button data-cmd="dump_cache">Dump cache</button>
-          <button data-cmd="flush_requestlist">Flush request list</button>
-          <button data-cmd="flush_bogus" class="danger">Flush bogus</button>
-          <button data-cmd="flush_negative" class="danger">Flush negative</button>
-        </div>
-        <div class="row">
-          <input type="text" id="flush-name" placeholder="dominio (ex: exemplo.com)">
-          <button data-cmd="flush" data-args="flush-name">Flush nome</button>
-          <button data-cmd="flush_zone" data-args="flush-name" class="danger">Flush zona</button>
-        </div>
-        <div class="row">
-          <input type="text" id="flush-type-name" placeholder="dominio">
-          <input type="text" id="flush-type-type" placeholder="tipo (ex: AAAA)">
-          <button data-cmd="flush_type" data-args="flush-type-name,flush-type-type">Flush tipo</button>
-        </div>
-        <div class="row">
-          <input type="text" id="flush-infra-ip" placeholder="IP (ou 'all')">
-          <button data-cmd="flush_infra" data-args="flush-infra-ip">Flush infra</button>
-        </div>
-        <div class="row">
-          <input type="text" id="verbosity-level" placeholder="nivel (0-5)">
-          <button data-cmd="verbosity" data-args="verbosity-level">Set verbosity</button>
-        </div>
+        <h2>Saida <span class="hint" id="control-last"></span></h2>
         <pre id="control-output">Saida dos comandos aparece aqui.</pre>
       </div>
     </div>
@@ -1336,12 +1368,14 @@ document.getElementById('logs-refresh-btn').addEventListener('click', loadLogTai
 document.querySelectorAll('[data-cmd]').forEach(btn => {
   btn.addEventListener('click', async () => {
     const cmd = btn.dataset.cmd;
+    if (btn.dataset.confirm && !confirm(btn.dataset.confirm)) return;
     let args = [];
     if (btn.dataset.args) {
       args = btn.dataset.args.split(',').map(id => document.getElementById(id).value).filter(v => v !== '');
     }
     const out = document.getElementById('control-output');
     out.textContent = 'Executando...';
+    document.getElementById('control-last').textContent = [cmd, ...args].join(' ');
     try {
       const res = await api(`/api/control/${cmd}`, { method: 'POST', body: JSON.stringify({ args }) });
       out.textContent = res.output || '(sem saida)';
