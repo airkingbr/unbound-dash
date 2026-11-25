@@ -223,6 +223,14 @@ fi
 echo "==> Backing up current binary"
 cp "$BIN_PATH" "${BIN_PATH}.bak.$(date +%s)"
 
+# Keep only the newest backups (each one is ~8 MB and one is made per update).
+KEEP_BACKUPS=3
+OLD_BACKUPS="$(ls -1t "${BIN_PATH}".bak* 2>/dev/null | tail -n +$((KEEP_BACKUPS + 1)) || true)"
+if [ -n "$OLD_BACKUPS" ]; then
+  echo "    removendo $(printf '%s\n' "$OLD_BACKUPS" | wc -l) backup(s) antigo(s); mantendo os ${KEEP_BACKUPS} mais recentes"
+  printf '%s\n' "$OLD_BACKUPS" | xargs -r rm -f --
+fi
+
 echo "==> Installing new binary"
 install -m 0755 "$TMP_FILE" "$BIN_PATH"
 
