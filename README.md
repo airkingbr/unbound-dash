@@ -116,7 +116,8 @@ sudo update-unbound-dash
 ```
 
 Ele baixa o novo binário, faz backup do binário atual
-(`/usr/local/bin/unbound-dash.bak.<timestamp>`) e reinicia o serviço. Em
+(`/usr/local/bin/unbound-dash.bak.<timestamp>`, mantendo só os 3 mais
+recentes) e reinicia o serviço. Em
 repositório privado, exporte `GITHUB_TOKEN` antes de rodar.
 
 Caso queira baixar `update.sh` manualmente (ex.: em um servidor instalado
