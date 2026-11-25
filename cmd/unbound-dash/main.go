@@ -3,14 +3,17 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/airkingbr/unbound-dash/internal/api"
 	"github.com/airkingbr/unbound-dash/internal/config"
+	"github.com/airkingbr/unbound-dash/internal/isptools"
 	"github.com/airkingbr/unbound-dash/internal/querylog"
 	"github.com/airkingbr/unbound-dash/internal/unboundctl"
 	"github.com/airkingbr/unbound-dash/web"
@@ -50,7 +53,20 @@ func main() {
 		}
 	}
 
-	server := api.New(cfg, client, static, tailer, version)
+	syncer := isptools.NewSyncer(isptools.Options{
+		Client:          isptools.NewClient(cfg.ISPToolsAPIURL, cfg.ISPToolsToken, "unbound-dash/"+version),
+		Ctl:             client,
+		CheckconfBin:    cfg.UnboundCheckconf,
+		UnboundConf:     cfg.UnboundConf,
+		BlocklistFile:   cfg.ISPToolsBlocklistFile,
+		LegacyFile:      cfg.LegacyBlocklistFile,
+		StaticEntryFile: cfg.StaticEntryFile,
+		StateDir:        cfg.StateDir,
+		Interval:        time.Duration(cfg.ISPToolsSyncMinutes) * time.Minute,
+	})
+	go syncer.Run(context.Background())
+
+	server := api.New(cfg, client, static, tailer, syncer, version)
 
 	log.Printf("unbound-dash listening on %s", cfg.ListenAddr)
 	if err := http.ListenAndServe(cfg.ListenAddr, server.Routes()); err != nil {

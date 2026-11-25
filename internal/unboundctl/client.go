@@ -31,6 +31,41 @@ func (c *Client) run(args ...string) (string, error) {
 	return string(out), nil
 }
 
+// RunStdin runs an unbound-control command feeding stdin, used by the
+// bulk commands (local_zones, local_zones_remove) that read one entry per
+// line.
+func (c *Client) RunStdin(stdin string, args ...string) (string, error) {
+	fullArgs := append([]string{"-c", c.Conf}, args...)
+	cmd := exec.Command(c.Bin, fullArgs...)
+	cmd.Stdin = strings.NewReader(stdin)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("unbound-control %s: %w: %s", strings.Join(args, " "), err, lastLines(string(out), 5))
+	}
+	return string(out), nil
+}
+
+// Checkconf runs unbound-checkconf against the configured unbound.conf.
+// checkconfBin defaults to "unbound-checkconf" next to unbound-control.
+func (c *Client) Checkconf(checkconfBin string) error {
+	if checkconfBin == "" {
+		checkconfBin = "unbound-checkconf"
+	}
+	out, err := exec.Command(checkconfBin, c.Conf).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("unbound-checkconf: %w: %s", err, lastLines(string(out), 5))
+	}
+	return nil
+}
+
+func lastLines(s string, n int) string {
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, " | ")
+}
+
 // Stats runs "unbound-control stats_noreset" and returns the raw key/value
 // pairs (e.g. "total.num.queries" -> "12345").
 func (c *Client) Stats() (map[string]string, error) {

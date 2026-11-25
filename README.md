@@ -18,7 +18,7 @@ Esqueleto inicial:
 - [x] Forward zones: encaminha a resolução de domínios específicos para outros resolvedores recursivos
 - [x] Entradas estáticas: fixa um domínio em IPv4/IPv6 fixos
 - [x] Instalador (`scripts/install.sh`) + unit systemd
-- [x] Gerência de blocklist (`anatel-blocklist.conf`), com importação de ofícios em PDF
+- [x] Blocklist DNS sincronizada com a API do ISP Tools (ofícios Anatel, Operação 404, decisões judiciais), aplicada sem reload
 - [x] Log do Unbound ao vivo (streaming)
 - [x] Testes DNS (consulta tipo dig, verificação de bloqueio, comparação de resolvedores, trace, reverso)
 - [x] Benchmark do recursivo (cache frio/quente, lote, replay, carga/QPS, histograma, comparação)
@@ -139,9 +139,12 @@ go run ./cmd/unbound-dash -config ./config.dev.json
   "listen_addr": ":8080",
   "unbound_control_bin": "/usr/sbin/unbound-control",
   "unbound_conf": "/etc/unbound/unbound.conf",
+  "isptools_token": "isptbl_...",
   "admin_password": "troque-isto"
 }
 ```
+
+Testes: `go test ./...`
 
 ## Comandos de controle suportados
 
@@ -149,26 +152,77 @@ go run ./cmd/unbound-dash -config ./config.dev.json
 `flush_negative`, `flush <nome>`, `flush_zone <zona>`, `flush_type <nome> <tipo>`,
 `flush_infra <ip|all>`, `verbosity <nivel>`.
 
-## Bloqueios de domínios
+## Bloqueios de domínios (Blocklist DNS do ISP Tools)
 
-A aba **Bloqueios** gerencia o arquivo `anatel-blocklist.conf` (lista de
-`local-zone: ... always_nxdomain` incluída no `unbound.conf`):
+A lista de domínios bloqueados (ofícios Anatel, Operação 404, decisões
+judiciais — ~160 mil domínios) vem da API **Blocklist DNS do ISP Tools**
+(`https://isptools.gbti.net.br/api/v1/blocklist`). O unbound-dash a mantém
+sincronizada sozinho; não há mais cadastro manual nem importação de ofícios
+em PDF. Exceções (desbloqueios) são cadastradas no ISP Tools, por empresa ou
+por token, e já chegam aplicadas na lista.
 
-- **Importar ofício (PDF)**: envie o PDF de um ofício de bloqueio judicial;
-  o sistema extrai o texto com `pdftotext` e usa um *template* (pacote
-  `internal/oficio`) para identificar a origem (ex: CyberGaeco/MPSP) e listar
-  todos os domínios do anexo, junto com a referência (`fonte`) e a data do
-  ofício. Os domínios extraídos podem ser revisados/editados antes de aplicar.
-  Como cada órgão envia o ofício em um formato de tabela diferente, novos
-  formatos exigem um novo template em `internal/oficio` (implementando a
-  interface `Template`).
-- **Adicionar bloqueio manual**: domínio + origem + fonte + data.
-- **Lista de domínios bloqueados**: busca por domínio/origem/fonte, paginação
-  de 100 em 100, remoção individual e **remoção em lote** (seleciona vários
-  e remove de uma vez, com um único `flush_zone .` no final).
+### Configuração
 
-Toda alteração na blocklist recarrega o Unbound (`reload`) e limpa o cache
-(`flush_zone`) para que o bloqueio/desbloqueio tenha efeito imediato.
+1. No ISP Tools, gere um token em *Blocklist DNS → Clientes e tokens* (um
+   token por cliente/servidor; o token é mostrado uma única vez). Se o token
+   for restrito por IP, libere o IP público de saída do servidor
+   (`curl -s https://isptools.gbti.net.br/api/v1/blocklist/ip`).
+2. Coloque o token em `/etc/unbound-dash/config.json` (arquivo com
+   permissão 600; o token nunca é exibido na interface nem em log):
+
+   ```json
+   "isptools_token": "isptbl_..."
+   ```
+
+3. `systemctl restart unbound-dash`. A primeira sincronização roda ~15 s
+   depois do início.
+
+Opções (todas opcionais): `isptools_sync_minutes` (padrão `60`),
+`isptools_blocklist_file` (padrão
+`/etc/unbound/unbound.conf.d/isptools-blocklist.conf`), `isptools_api_url`,
+`state_dir` (padrão `/var/lib/unbound-dash`), `unbound_checkconf_bin`.
+
+### Como funciona
+
+A cada hora (mais alguns minutos aleatórios por instalação):
+
+1. Consulta `/versao`; se o md5 da lista deste token não mudou, para aí.
+2. Baixa `/lista?formato=texto` (gzip), confere o md5 e recusa listas com
+   menos de 1000 domínios.
+3. Grava o arquivo persistente `isptools-blocklist.conf` (garante o
+   `include:` no `unbound.conf`) e valida com `unbound-checkconf`; se
+   reprovar, desfaz tudo.
+4. Aplica **só as diferenças** no Unbound em execução, com
+   `unbound-control local_zones` / `local_zones_remove` — **sem `reload`**,
+   então o cache é preservado e o bloqueio vale na hora.
+5. Registra versão, total e +adicionados/−removidos no histórico.
+
+Se qualquer etapa falhar (rede, 5xx, md5 diferente, lista pequena demais,
+`checkconf`), a lista atual é mantida. `401` (token inválido/revogado) pausa
+a sincronização automática; `403` mostra na tela o IP a ser liberado; `429`
+respeita o `Retry-After`.
+
+Domínios que têm uma **entrada estática** no dashboard não são tocados pela
+blocklist (a entrada estática prevalece).
+
+Não rode o script oficial `isptools-blocklist` no mesmo Unbound: os dois
+gerenciariam as mesmas zonas.
+
+### Aba Bloqueios
+
+Situação (em dia / desatualizado / erro), total de domínios, versão e data
+da lista, histórico de sincronizações, botão **Sincronizar agora**, busca na
+lista aplicada e **Testar bloqueio** (consulta o Unbound local e confirma o
+NXDOMAIN).
+
+### Migração do antigo `anatel-blocklist.conf`
+
+Em servidores que usavam a blocklist manual, a primeira sincronização
+bem-sucedida com a API desativa o arquivo antigo automaticamente: comenta o
+`include:` dele no `unbound.conf` (com backup), renomeia o arquivo para
+`anatel-blocklist.conf.migrado-<timestamp>` e remove do Unbound em execução
+os domínios antigos que não estão na lista da API. Até lá, o arquivo antigo
+continua valendo.
 
 ## Forward zones
 
@@ -228,7 +282,7 @@ externos):
   (`127.0.0.1:53`) ou outro servidor informado. Mostra status (NOERROR,
   NXDOMAIN, SERVFAIL...), tempo de resposta, flag DNSSEC (`AD`) e os
   registros de resposta/autoridade.
-- **Verificar bloqueio**: informa se um domínio está na blocklist (direto ou
+- **Verificar bloqueio**: informa se um domínio está na blocklist do ISP Tools (direto ou
   via zona pai bloqueada) e confirma com uma consulta real ao resolvedor
   local — útil para validar se um bloqueio está realmente em vigor.
 - **Comparar resolvedores**: roda a mesma consulta em paralelo contra o

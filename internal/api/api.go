@@ -10,12 +10,12 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/airkingbr/unbound-dash/internal/auth"
-	"github.com/airkingbr/unbound-dash/internal/blocklist"
 	"github.com/airkingbr/unbound-dash/internal/config"
+	dname "github.com/airkingbr/unbound-dash/internal/domain"
 	"github.com/airkingbr/unbound-dash/internal/forwardzone"
+	"github.com/airkingbr/unbound-dash/internal/isptools"
 	"github.com/airkingbr/unbound-dash/internal/querylog"
 	"github.com/airkingbr/unbound-dash/internal/staticentry"
 	"github.com/airkingbr/unbound-dash/internal/unboundctl"
@@ -27,13 +27,14 @@ type Server struct {
 	client   *unboundctl.Client
 	static   fs.FS
 	querylog *querylog.Tailer
+	syncer   *isptools.Syncer
 	version  string
 }
 
 // New creates a new API server. tailer may be nil if query log
 // aggregation is unavailable.
-func New(cfg config.Config, client *unboundctl.Client, static fs.FS, tailer *querylog.Tailer, version string) *Server {
-	return &Server{cfg: cfg, client: client, static: static, querylog: tailer, version: version}
+func New(cfg config.Config, client *unboundctl.Client, static fs.FS, tailer *querylog.Tailer, syncer *isptools.Syncer, version string) *Server {
+	return &Server{cfg: cfg, client: client, static: static, querylog: tailer, syncer: syncer, version: version}
 }
 
 // Routes builds the top-level HTTP handler.
@@ -50,10 +51,10 @@ func (s *Server) Routes() http.Handler {
 	protected.HandleFunc("GET /api/top-clients", s.handleTopClients)
 	protected.HandleFunc("GET /api/logs", s.handleLogs)
 	protected.HandleFunc("GET /api/logs/stream", s.handleLogStream)
-	protected.HandleFunc("GET /api/blocklist", s.handleListBlocklist)
-	protected.HandleFunc("POST /api/blocklist", s.handleAddBlocklist)
-	protected.HandleFunc("DELETE /api/blocklist/{domain}", s.handleDeleteBlocklist)
-	protected.HandleFunc("POST /api/blocklist/bulk-delete", s.handleBulkDeleteBlocklist)
+	protected.HandleFunc("GET /api/blocklist/status", s.handleBlocklistStatus)
+	protected.HandleFunc("POST /api/blocklist/sync", s.handleBlocklistSync)
+	protected.HandleFunc("GET /api/blocklist/search", s.handleBlocklistSearch)
+	protected.HandleFunc("POST /api/blocklist/test", s.handleBlocklistTest)
 	protected.HandleFunc("GET /api/forwardzone", s.handleListForwardZones)
 	protected.HandleFunc("POST /api/forwardzone", s.handleAddForwardZone)
 	protected.HandleFunc("PUT /api/forwardzone/{domain}", s.handleUpdateForwardZone)
@@ -62,8 +63,6 @@ func (s *Server) Routes() http.Handler {
 	protected.HandleFunc("POST /api/staticentry", s.handleAddStaticEntry)
 	protected.HandleFunc("PUT /api/staticentry/{domain}", s.handleUpdateStaticEntry)
 	protected.HandleFunc("DELETE /api/staticentry/{domain}", s.handleDeleteStaticEntry)
-	protected.HandleFunc("POST /api/oficio/parse", s.handleOficioParse)
-	protected.HandleFunc("POST /api/oficio/apply", s.handleOficioApply)
 	protected.HandleFunc("POST /api/control/{command}", s.handleControl)
 	protected.HandleFunc("POST /api/dns/query", s.handleDNSQuery)
 	protected.HandleFunc("POST /api/dns/reverse", s.handleDNSReverse)
@@ -234,145 +233,6 @@ func (s *Server) handleLogStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) handleListBlocklist(w http.ResponseWriter, _ *http.Request) {
-	entries, err := blocklist.Load(s.cfg.BlocklistFile)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": entries})
-}
-
-func (s *Server) handleAddBlocklist(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Domain string `json:"domain"`
-		Origem string `json:"origem"`
-		Fonte  string `json:"fonte"`
-		Data   string `json:"data"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-
-	domain := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(req.Domain), "."))
-	if !blocklist.ValidDomain(domain) {
-		writeError(w, http.StatusBadRequest, "dominio invalido")
-		return
-	}
-	req.Origem = strings.TrimSpace(req.Origem)
-	if req.Origem == "" {
-		writeError(w, http.StatusBadRequest, "origem e obrigatoria")
-		return
-	}
-	req.Fonte = strings.TrimSpace(req.Fonte)
-	req.Data = strings.TrimSpace(req.Data)
-	if !blocklist.ValidMeta(req.Origem) || !blocklist.ValidMeta(req.Fonte) || !blocklist.ValidMeta(req.Data) {
-		writeError(w, http.StatusBadRequest, "campos nao podem conter '#' ou quebras de linha")
-		return
-	}
-	if req.Data == "" {
-		req.Data = time.Now().Format("2006-01-02")
-	}
-
-	entries, err := blocklist.Load(s.cfg.BlocklistFile)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	for _, e := range entries {
-		if e.Domain == domain {
-			writeError(w, http.StatusConflict, "dominio ja esta na lista de bloqueios")
-			return
-		}
-	}
-	entries = append(entries, blocklist.Entry{Domain: domain, Origem: req.Origem, Fonte: req.Fonte, Data: req.Data})
-
-	if err := blocklist.Save(s.cfg.BlocklistFile, entries); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	s.reloadUnbound()
-	s.flushZone(domain)
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
-}
-
-func (s *Server) handleDeleteBlocklist(w http.ResponseWriter, r *http.Request) {
-	domain := strings.ToLower(strings.TrimSuffix(r.PathValue("domain"), "."))
-
-	entries, err := blocklist.Load(s.cfg.BlocklistFile)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	out := entries[:0]
-	found := false
-	for _, e := range entries {
-		if e.Domain == domain {
-			found = true
-			continue
-		}
-		out = append(out, e)
-	}
-	if !found {
-		writeError(w, http.StatusNotFound, "dominio nao encontrado na lista de bloqueios")
-		return
-	}
-
-	if err := blocklist.Save(s.cfg.BlocklistFile, out); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	s.reloadUnbound()
-	s.flushZone(domain)
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
-}
-
-// handleBulkDeleteBlocklist removes multiple domains from the blocklist in
-// one shot, reloading Unbound and flushing the entire cache once at the end.
-func (s *Server) handleBulkDeleteBlocklist(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Domains []string `json:"domains"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-
-	toRemove := make(map[string]bool, len(req.Domains))
-	for _, raw := range req.Domains {
-		toRemove[strings.ToLower(strings.TrimSuffix(strings.TrimSpace(raw), "."))] = true
-	}
-
-	entries, err := blocklist.Load(s.cfg.BlocklistFile)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	out := entries[:0]
-	removed := []string{}
-	for _, e := range entries {
-		if toRemove[e.Domain] {
-			removed = append(removed, e.Domain)
-			continue
-		}
-		out = append(out, e)
-	}
-
-	if len(removed) > 0 {
-		if err := blocklist.Save(s.cfg.BlocklistFile, out); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		s.reloadUnbound()
-		s.flushZone(".")
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{"removed": removed})
-}
-
 func (s *Server) handleListForwardZones(w http.ResponseWriter, _ *http.Request) {
 	entries, err := forwardzone.Load(s.cfg.ForwardZoneFile)
 	if err != nil {
@@ -405,7 +265,7 @@ func (s *Server) handleAddForwardZone(w http.ResponseWriter, r *http.Request) {
 	}
 
 	domain := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(req.Domain), "."))
-	if !blocklist.ValidDomain(domain) {
+	if !dname.Valid(domain) {
 		writeError(w, http.StatusBadRequest, "dominio invalido")
 		return
 	}
@@ -545,7 +405,7 @@ func (s *Server) handleAddStaticEntry(w http.ResponseWriter, r *http.Request) {
 	}
 
 	domain := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(req.Domain), "."))
-	if !blocklist.ValidDomain(domain) {
+	if !dname.Valid(domain) {
 		writeError(w, http.StatusBadRequest, "dominio invalido")
 		return
 	}
@@ -655,7 +515,7 @@ func (s *Server) handleDeleteStaticEntry(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) reloadUnbound() {
 	if _, err := unboundctl.RunControl(s.client, "reload", nil); err != nil {
-		log.Printf("reload unbound after blocklist change: %v", err)
+		log.Printf("reload unbound after config change: %v", err)
 	}
 }
 
@@ -664,7 +524,7 @@ func (s *Server) reloadUnbound() {
 // of waiting for the cached entries' TTL to expire.
 func (s *Server) flushZone(domain string) {
 	if _, err := unboundctl.RunControl(s.client, "flush_zone", []string{domain}); err != nil {
-		log.Printf("flush_zone %s after blocklist change: %v", domain, err)
+		log.Printf("flush_zone %s after config change: %v", domain, err)
 	}
 }
 

@@ -79,6 +79,7 @@
   }
   .card .value.green { color: var(--green); }
   .card .value.yellow { color: var(--yellow); }
+  .card .value.red { color: var(--danger); }
 
   .panel { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 24px; }
   .panel h2 { font-size: 14px; font-weight: 600; margin: 0 0 16px; }
@@ -303,63 +304,42 @@
 
     <div class="tab-content hidden" id="tab-blocklist">
       <div class="panel">
-        <h2>Importar oficio (PDF)</h2>
+        <h2>Blocklist DNS &middot; ISP Tools <span class="hint" id="bl-subtitle"></span></h2>
+        <p class="hint">
+          Lista de dominios bloqueados em DNS (oficios Anatel, Operacao 404, decisoes judiciais),
+          sincronizada automaticamente com a API do ISP Tools. As mudancas sao aplicadas no Unbound
+          sem reload (o cache e preservado). Excecoes sao gerenciadas no ISP Tools.
+        </p>
+        <div class="grid" id="bl-cards"></div>
+        <div class="error hidden" id="bl-alert"></div>
         <div class="row">
-          <input type="file" id="oficio-file" accept="application/pdf">
-          <button id="oficio-parse-btn">Processar PDF</button>
+          <button id="bl-sync-btn">Sincronizar agora</button>
+          <button id="bl-test-btn">Testar bloqueio</button>
+          <span class="hint" id="bl-next"></span>
         </div>
-        <div class="error hidden" id="oficio-error"></div>
-        <div id="oficio-result" class="hidden">
-          <div class="row">
-            <input type="text" id="oficio-origem" placeholder="origem">
-            <input type="text" id="oficio-fonte" placeholder="fonte (opcional)">
-            <input type="date" id="oficio-data">
-          </div>
-          <div class="hint" id="oficio-count"></div>
-          <div class="row">
-            <textarea id="oficio-domains" rows="10"></textarea>
-          </div>
-          <div class="row">
-            <button id="oficio-apply-btn">Aplicar bloqueios</button>
-          </div>
-          <pre class="hidden" id="oficio-apply-output"></pre>
-        </div>
+        <pre class="hidden" id="bl-output"></pre>
       </div>
 
       <div class="panel">
-        <h2>Adicionar bloqueio</h2>
-        <form id="blocklist-form">
-          <div class="row">
-            <input type="text" id="blocklist-domain" placeholder="dominio (ex: exemplo.com)" required>
-            <input type="text" id="blocklist-origem" placeholder="origem (ex: anatel, ia-prosa)" required>
-            <input type="text" id="blocklist-fonte" placeholder="fonte (opcional)">
-            <input type="date" id="blocklist-data">
-            <button type="submit">Adicionar</button>
-          </div>
-          <div class="error hidden" id="blocklist-error"></div>
-        </form>
-      </div>
-
-      <div class="panel">
-        <h2>Dominios bloqueados</h2>
-        <div class="row">
-          <input type="text" id="blocklist-search" placeholder="Buscar dominio, origem ou fonte...">
-          <button id="blocklist-bulk-delete-btn" disabled>Remover selecionados</button>
-        </div>
+        <h2>Historico de sincronizacoes</h2>
         <table>
           <thead>
-            <tr>
-              <th><input type="checkbox" id="blocklist-select-all"></th>
-              <th>Dominio</th>
-              <th>Origem</th>
-              <th>Fonte</th>
-              <th>Data</th>
-              <th></th>
-            </tr>
+            <tr><th>Data</th><th class="num">Versao</th><th class="num">Dominios</th><th class="num">+ Adicionados</th><th class="num">- Removidos</th><th>Obs.</th></tr>
           </thead>
-          <tbody id="blocklist-body"><tr><td colspan="6">Carregando...</td></tr></tbody>
+          <tbody id="bl-history"><tr><td colspan="6">Carregando...</td></tr></tbody>
         </table>
-        <div class="row" id="blocklist-pagination"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Buscar na lista aplicada</h2>
+        <div class="row">
+          <input type="text" id="bl-search" placeholder="Buscar dominio (ex: bet)">
+        </div>
+        <table>
+          <thead><tr><th>Dominio</th><th></th></tr></thead>
+          <tbody id="bl-search-body"><tr><td colspan="2">Digite para buscar.</td></tr></tbody>
+        </table>
+        <div class="hint" id="bl-search-info"></div>
       </div>
     </div>
 
@@ -695,7 +675,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
       stopLogStream();
     }
     if (btn.dataset.tab === 'blocklist') {
-      refreshBlocklist();
+      refreshBlocklistStatus();
     }
     if (btn.dataset.tab === 'forwardzone') {
       refreshForwardZones();
@@ -876,9 +856,10 @@ async function refreshStatus() {
 
 async function refreshBlocklistCount() {
   try {
-    const res = await api('/api/blocklist');
-    blocklistCount = (res.items || []).length;
+    const st = await api('/api/blocklist/status');
+    blocklistCount = st.configured ? st.dominios : null;
     if (lastStats) renderCards(lastStats);
+    if (!document.getElementById('tab-blocklist').classList.contains('hidden')) renderBlocklistStatus(st);
   } catch (err) {
     console.error(err);
   }
@@ -973,195 +954,171 @@ function escapeHtml(s) {
   return div.innerHTML;
 }
 
-const BLOCKLIST_PAGE_SIZE = 100;
-let blocklistItems = [];
-let blocklistFiltered = [];
-let blocklistPage = 1;
-let blocklistSelected = new Set();
+const BL_STATE = {
+  nao_configurado: { label: 'Nao configurado', color: 'yellow' },
+  pendente: { label: 'Aguardando 1a sincronizacao', color: 'yellow' },
+  em_dia: { label: 'Em dia', color: 'green' },
+  desatualizado: { label: 'Desatualizado', color: 'yellow' },
+  erro: { label: 'Erro', color: 'red' },
+};
 
-async function refreshBlocklist() {
-  const body = document.getElementById('blocklist-body');
-  body.innerHTML = '<tr><td colspan="6">Carregando...</td></tr>';
-  try {
-    const res = await api('/api/blocklist');
-    blocklistItems = res.items || [];
-    blocklistSelected.clear();
-    blocklistPage = 1;
-    applyBlocklistFilter();
-  } catch (err) {
-    body.innerHTML = `<tr><td colspan="6">Erro: ${err.message}</td></tr>`;
-  }
+function fmtDate(v) {
+  if (!v) return '-';
+  return new Date(v).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
 }
 
-function applyBlocklistFilter() {
-  const term = document.getElementById('blocklist-search').value.trim().toLowerCase();
-  blocklistFiltered = !term ? blocklistItems : blocklistItems.filter(({ domain, origem, fonte }) =>
-    (domain || '').toLowerCase().includes(term) ||
-    (origem || '').toLowerCase().includes(term) ||
-    (fonte || '').toLowerCase().includes(term)
-  );
-  const totalPages = Math.max(1, Math.ceil(blocklistFiltered.length / BLOCKLIST_PAGE_SIZE));
-  if (blocklistPage > totalPages) blocklistPage = totalPages;
-  renderBlocklistPage();
+// atualizado_em comes as "2026-11-25 11:29:32 -0300"
+function fmtApiDate(v) {
+  if (!v) return '-';
+  const m = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) ([+-]\d{2})(\d{2})$/.exec(v);
+  return m ? fmtDate(`${m[1]}T${m[2]}${m[3]}:${m[4]}`) : v;
 }
 
-function renderBlocklistPage() {
-  const body = document.getElementById('blocklist-body');
-  const pagination = document.getElementById('blocklist-pagination');
+function renderBlocklistStatus(st) {
+  const state = BL_STATE[st.state] || { label: st.state, color: '' };
+  const cards = document.getElementById('bl-cards');
+  cards.innerHTML = '';
+  addCard(cards, 'Situacao', escapeHtml(state.label), state.color);
+  addCard(cards, 'Dominios bloqueados', formatNumber(st.dominios || 0), 'yellow');
+  const applied = st.applied_versao;
+  addCard(cards, 'Versao aplicada', applied ? 'v' + applied.versao : '-');
+  addCard(cards, 'Lista publicada em', applied ? escapeHtml(fmtApiDate(applied.atualizado_em)) : '-');
+  addCard(cards, 'Ultima aplicacao', escapeHtml(fmtDate(st.applied_at)));
+  addCard(cards, 'Ultima verificacao', escapeHtml(fmtDate(st.last_check_at)));
 
-  if (blocklistFiltered.length === 0) {
-    body.innerHTML = '<tr><td colspan="6">Nenhum dominio encontrado.</td></tr>';
-    pagination.innerHTML = '';
-    updateBulkDeleteBtn();
-    return;
+  const sub = [];
+  if (st.remote && st.remote.excecoes_cliente) sub.push('lista com excecoes do cliente');
+  if (st.skipped_static) sub.push(`${st.skipped_static} dominio(s) ignorado(s) por terem entrada estatica`);
+  document.getElementById('bl-subtitle').textContent = sub.join(' · ');
+
+  const alert = document.getElementById('bl-alert');
+  let msg = '';
+  if (!st.configured) {
+    msg = 'Token da API nao configurado. Defina "isptools_token" em /etc/unbound-dash/config.json e reinicie o servico (systemctl restart unbound-dash).';
+  } else if (st.error_code === 401) {
+    msg = 'Token invalido ou revogado (HTTP 401). A sincronizacao automatica foi pausada: gere um novo token no ISP Tools, atualize o config.json e reinicie o servico.';
+  } else if (st.error_code === 403) {
+    msg = `IP nao autorizado para este token (HTTP 403). Peca a liberacao do IP ${st.public_ip || '(desconhecido)'} no ISP Tools.`;
+  } else if (st.last_error) {
+    msg = 'Erro na ultima sincronizacao: ' + st.last_error;
   }
+  if (msg && st.state === 'erro' && st.dominios) msg += ` A lista atual (${formatNumber(st.dominios)} dominios) continua aplicada.`;
+  if (st.retry_until) msg += ` Proxima tentativa liberada em ${fmtDate(st.retry_until)}.`;
+  alert.textContent = msg;
+  alert.classList.toggle('hidden', !msg);
 
-  const totalPages = Math.max(1, Math.ceil(blocklistFiltered.length / BLOCKLIST_PAGE_SIZE));
-  const start = (blocklistPage - 1) * BLOCKLIST_PAGE_SIZE;
-  const pageItems = blocklistFiltered.slice(start, start + BLOCKLIST_PAGE_SIZE);
+  let next = '';
+  if (st.syncing) next = 'Sincronizando...';
+  else if (st.paused) next = 'Sincronizacao automatica pausada.';
+  else if (st.next_check_at) next = 'Proxima verificacao: ' + fmtDate(st.next_check_at);
+  document.getElementById('bl-next').textContent = next;
+  document.getElementById('bl-sync-btn').disabled = !st.configured || st.syncing;
+  document.getElementById('bl-test-btn').disabled = !st.dominios;
 
-  body.innerHTML = '';
-  for (const { domain, origem, fonte, data } of pageItems) {
-    const tr = document.createElement('tr');
-    const checked = blocklistSelected.has(domain) ? 'checked' : '';
-    tr.innerHTML = `
-      <td><input type="checkbox" class="blocklist-row-check" data-domain="${escapeHtml(domain)}" ${checked}></td>
-      <td>${escapeHtml(domain)}</td>
-      <td>${escapeHtml(origem || '-')}</td>
-      <td>${escapeHtml(fonte || '-')}</td>
-      <td>${escapeHtml(data || '-')}</td>
-      <td><button class="remove-btn" data-domain="${escapeHtml(domain)}">Remover</button></td>
-    `;
-    body.appendChild(tr);
-  }
-
-  pagination.innerHTML = '';
-  if (totalPages > 1) {
-    const info = document.createElement('span');
-    info.className = 'hint';
-    info.textContent = `Pagina ${blocklistPage} de ${totalPages} (${blocklistFiltered.length} dominios)`;
-    pagination.appendChild(info);
-
-    const prevBtn = document.createElement('button');
-    prevBtn.textContent = 'Anterior';
-    prevBtn.disabled = blocklistPage <= 1;
-    prevBtn.addEventListener('click', () => { blocklistPage--; renderBlocklistPage(); });
-    pagination.appendChild(prevBtn);
-
-    const nextBtn = document.createElement('button');
-    nextBtn.textContent = 'Proxima';
-    nextBtn.disabled = blocklistPage >= totalPages;
-    nextBtn.addEventListener('click', () => { blocklistPage++; renderBlocklistPage(); });
-    pagination.appendChild(nextBtn);
+  const body = document.getElementById('bl-history');
+  const history = st.history || [];
+  if (history.length === 0) {
+    body.innerHTML = '<tr><td colspan="6">Nenhuma sincronizacao aplicada ainda.</td></tr>';
   } else {
-    const info = document.createElement('span');
-    info.className = 'hint';
-    info.textContent = `${blocklistFiltered.length} dominios`;
-    pagination.appendChild(info);
+    body.innerHTML = history.map(h => `
+      <tr>
+        <td>${escapeHtml(fmtDate(h.at))}</td>
+        <td class="num">v${h.versao}</td>
+        <td class="num">${formatNumber(h.dominios)}</td>
+        <td class="num">+${formatNumber(h.added)}</td>
+        <td class="num">-${formatNumber(h.removed)}</td>
+        <td>${escapeHtml(h.note || '')}</td>
+      </tr>`).join('');
   }
-
-  updateSelectAllCheckbox();
-  updateBulkDeleteBtn();
 }
 
-function updateSelectAllCheckbox() {
-  const selectAll = document.getElementById('blocklist-select-all');
-  const checks = document.querySelectorAll('.blocklist-row-check');
-  if (checks.length === 0) {
-    selectAll.checked = false;
-    selectAll.indeterminate = false;
+async function refreshBlocklistStatus() {
+  try {
+    renderBlocklistStatus(await api('/api/blocklist/status'));
+  } catch (err) {
+    const alert = document.getElementById('bl-alert');
+    alert.textContent = 'Erro: ' + err.message;
+    alert.classList.remove('hidden');
+  }
+}
+
+function showBlocklistOutput(text) {
+  const out = document.getElementById('bl-output');
+  out.textContent = text;
+  out.classList.remove('hidden');
+}
+
+document.getElementById('bl-sync-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('bl-sync-btn');
+  btn.disabled = true;
+  btn.textContent = 'Sincronizando...';
+  showBlocklistOutput('Consultando a API do ISP Tools... (a primeira carga pode levar alguns segundos)');
+  try {
+    const res = await fetch('/api/blocklist/sync', { method: 'POST' });
+    if (res.status === 401) { showLogin(); return; }
+    const body = await res.json().catch(() => ({}));
+    if (body.status) renderBlocklistStatus(body.status);
+    showBlocklistOutput(res.ok ? 'Resultado: ' + body.result.message : 'Erro: ' + (body.error || res.statusText));
+    refreshBlocklistCount();
+  } catch (err) {
+    showBlocklistOutput('Erro: ' + err.message);
+  } finally {
+    btn.textContent = 'Sincronizar agora';
+    refreshBlocklistStatus();
+  }
+});
+
+async function testBlocklist(domain) {
+  showBlocklistOutput('Consultando o Unbound local...');
+  try {
+    const res = await api('/api/blocklist/test', { method: 'POST', body: JSON.stringify({ domain: domain || '' }) });
+    const q = res.query || {};
+    const ok = q.status === 'NXDOMAIN';
+    const lines = [
+      `Dominio: ${res.domain}`,
+      `Na lista: ${res.blocked_by ? 'sim (zona ' + res.blocked_by + ')' : 'nao'}`,
+      `Resposta do Unbound (127.0.0.1): ${q.status || '-'}`,
+      ok ? 'Bloqueio efetivo.' : (res.blocked_by ? 'ATENCAO: o dominio esta na lista mas o Unbound nao respondeu NXDOMAIN.' : ''),
+    ];
+    showBlocklistOutput(lines.filter(Boolean).join('\n'));
+  } catch (err) {
+    showBlocklistOutput('Erro: ' + err.message);
+  }
+}
+
+document.getElementById('bl-test-btn').addEventListener('click', () => testBlocklist(''));
+
+let blSearchTimer = null;
+document.getElementById('bl-search').addEventListener('input', (e) => {
+  clearTimeout(blSearchTimer);
+  blSearchTimer = setTimeout(() => searchBlocklist(e.target.value.trim()), 250);
+});
+
+async function searchBlocklist(q) {
+  const body = document.getElementById('bl-search-body');
+  const info = document.getElementById('bl-search-info');
+  if (q.length < 2) {
+    body.innerHTML = '<tr><td colspan="2">Digite ao menos 2 caracteres.</td></tr>';
+    info.textContent = '';
     return;
   }
-  const checkedCount = Array.from(checks).filter(c => c.checked).length;
-  selectAll.checked = checkedCount === checks.length;
-  selectAll.indeterminate = checkedCount > 0 && checkedCount < checks.length;
+  try {
+    const res = await api('/api/blocklist/search?limit=100&q=' + encodeURIComponent(q));
+    const items = res.items || [];
+    body.innerHTML = items.length === 0
+      ? '<tr><td colspan="2">Nenhum dominio encontrado.</td></tr>'
+      : items.map(d => `<tr><td>${escapeHtml(d)}</td><td><button class="bl-test-row" data-domain="${escapeHtml(d)}">Testar</button></td></tr>`).join('');
+    info.textContent = res.total > items.length
+      ? `Mostrando ${items.length} de ${formatNumber(res.total)} resultados.`
+      : `${formatNumber(res.total)} resultado(s).`;
+  } catch (err) {
+    body.innerHTML = `<tr><td colspan="2">Erro: ${escapeHtml(err.message)}</td></tr>`;
+  }
 }
 
-function updateBulkDeleteBtn() {
-  document.getElementById('blocklist-bulk-delete-btn').disabled = blocklistSelected.size === 0;
-}
-
-document.getElementById('blocklist-search').addEventListener('input', () => {
-  blocklistPage = 1;
-  applyBlocklistFilter();
-});
-
-document.getElementById('blocklist-select-all').addEventListener('change', (e) => {
-  const checks = document.querySelectorAll('.blocklist-row-check');
-  for (const c of checks) {
-    c.checked = e.target.checked;
-    if (e.target.checked) blocklistSelected.add(c.dataset.domain);
-    else blocklistSelected.delete(c.dataset.domain);
-  }
-  updateBulkDeleteBtn();
-});
-
-document.getElementById('blocklist-body').addEventListener('change', (e) => {
-  const check = e.target.closest('.blocklist-row-check');
-  if (!check) return;
-  if (check.checked) blocklistSelected.add(check.dataset.domain);
-  else blocklistSelected.delete(check.dataset.domain);
-  updateSelectAllCheckbox();
-  updateBulkDeleteBtn();
-});
-
-document.getElementById('blocklist-bulk-delete-btn').addEventListener('click', async () => {
-  const domains = Array.from(blocklistSelected);
-  if (domains.length === 0) return;
-  if (!confirm(`Remover ${domains.length} dominio(s) selecionado(s)?`)) return;
-  const btn = document.getElementById('blocklist-bulk-delete-btn');
-  btn.disabled = true;
-  try {
-    await api('/api/blocklist/bulk-delete', {
-      method: 'POST',
-      body: JSON.stringify({ domains }),
-    });
-    refreshBlocklist();
-    refreshBlocklistCount();
-  } catch (err) {
-    alert('Erro: ' + err.message);
-    btn.disabled = false;
-  }
-});
-
-document.getElementById('blocklist-body').addEventListener('click', async (e) => {
-  const btn = e.target.closest('.remove-btn');
-  if (!btn) return;
-  const domain = btn.dataset.domain;
-  if (!confirm(`Remover o bloqueio de "${domain}"?`)) return;
-  btn.disabled = true;
-  try {
-    await api(`/api/blocklist/${encodeURIComponent(domain)}`, { method: 'DELETE' });
-    refreshBlocklist();
-    refreshBlocklistCount();
-  } catch (err) {
-    alert('Erro: ' + err.message);
-    btn.disabled = false;
-  }
-});
-
-document.getElementById('blocklist-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const errorBox = document.getElementById('blocklist-error');
-  errorBox.classList.add('hidden');
-
-  const domain = document.getElementById('blocklist-domain').value.trim();
-  const origem = document.getElementById('blocklist-origem').value.trim();
-  const fonte = document.getElementById('blocklist-fonte').value.trim();
-  const data = document.getElementById('blocklist-data').value;
-
-  try {
-    await api('/api/blocklist', {
-      method: 'POST',
-      body: JSON.stringify({ domain, origem, fonte, data }),
-    });
-    document.getElementById('blocklist-form').reset();
-    refreshBlocklist();
-    refreshBlocklistCount();
-  } catch (err) {
-    errorBox.textContent = 'Erro: ' + err.message;
-    errorBox.classList.remove('hidden');
-  }
+document.getElementById('bl-search-body').addEventListener('click', (e) => {
+  const btn = e.target.closest('.bl-test-row');
+  if (btn) testBlocklist(btn.dataset.domain);
 });
 
 async function refreshForwardZones() {
@@ -1308,85 +1265,6 @@ document.getElementById('staticentry-form').addEventListener('submit', async (e)
   }
 });
 
-document.getElementById('oficio-parse-btn').addEventListener('click', async () => {
-  const fileInput = document.getElementById('oficio-file');
-  const errorBox = document.getElementById('oficio-error');
-  errorBox.classList.add('hidden');
-
-  if (!fileInput.files.length) {
-    errorBox.textContent = 'Selecione um arquivo PDF.';
-    errorBox.classList.remove('hidden');
-    return;
-  }
-
-  const formData = new FormData();
-  formData.append('file', fileInput.files[0]);
-
-  const btn = document.getElementById('oficio-parse-btn');
-  btn.disabled = true;
-  btn.textContent = 'Processando...';
-  try {
-    const res = await fetch('/api/oficio/parse', { method: 'POST', body: formData });
-    if (res.status === 401) {
-      showLogin();
-      return;
-    }
-    const body = await res.json();
-    if (!res.ok) throw new Error(body.error || res.statusText);
-
-    const domains = body.domains || [];
-    document.getElementById('oficio-origem').value = body.origem || '';
-    document.getElementById('oficio-fonte').value = body.fonte || '';
-    document.getElementById('oficio-data').value = body.data || '';
-    document.getElementById('oficio-domains').value = domains.join('\n');
-    document.getElementById('oficio-count').textContent = `${domains.length} dominios encontrados`;
-    document.getElementById('oficio-apply-output').classList.add('hidden');
-    document.getElementById('oficio-result').classList.remove('hidden');
-  } catch (err) {
-    errorBox.textContent = 'Erro: ' + err.message;
-    errorBox.classList.remove('hidden');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Processar PDF';
-  }
-});
-
-document.getElementById('oficio-apply-btn').addEventListener('click', async () => {
-  const errorBox = document.getElementById('oficio-error');
-  errorBox.classList.add('hidden');
-
-  const origem = document.getElementById('oficio-origem').value.trim();
-  const fonte = document.getElementById('oficio-fonte').value.trim();
-  const data = document.getElementById('oficio-data').value;
-  const domains = document.getElementById('oficio-domains').value
-    .split('\n').map(s => s.trim()).filter(Boolean);
-
-  const btn = document.getElementById('oficio-apply-btn');
-  btn.disabled = true;
-  btn.textContent = 'Aplicando...';
-  try {
-    const res = await api('/api/oficio/apply', {
-      method: 'POST',
-      body: JSON.stringify({ domains, origem, fonte, data }),
-    });
-    const added = res.added || [];
-    const skipped = res.skipped || [];
-    const invalid = res.invalid || [];
-    let text = `Adicionados: ${added.length}\nJa existiam: ${skipped.length}\nInvalidos: ${invalid.length}`;
-    if (invalid.length) text += '\n  ' + invalid.join('\n  ');
-    const out = document.getElementById('oficio-apply-output');
-    out.textContent = text;
-    out.classList.remove('hidden');
-    refreshBlocklist();
-    refreshBlocklistCount();
-  } catch (err) {
-    errorBox.textContent = 'Erro: ' + err.message;
-    errorBox.classList.remove('hidden');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Aplicar bloqueios';
-  }
-});
 
 const MAX_LOG_LINES = 300;
 const LOG_FLUSH_INTERVAL = 500;

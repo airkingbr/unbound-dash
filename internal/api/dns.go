@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/airkingbr/unbound-dash/internal/blocklist"
 	"github.com/airkingbr/unbound-dash/internal/dnstools"
 )
 
@@ -106,7 +105,7 @@ func (s *Server) handleDNSCompare(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": results})
 }
 
-// handleDNSBlocked checks whether a domain is present in the blocklist
+// handleDNSBlocked checks whether a domain is present in the ISP Tools blocklist
 // (directly or via a blocked parent zone) and confirms it by querying the
 // local resolver.
 func (s *Server) handleDNSBlocked(w http.ResponseWriter, r *http.Request) {
@@ -123,20 +122,7 @@ func (s *Server) handleDNSBlocked(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entries, err := blocklist.Load(s.cfg.BlocklistFile)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	blockedBy := ""
-	for _, e := range entries {
-		if domain == e.Domain || strings.HasSuffix(domain, "."+e.Domain) {
-			if blockedBy == "" || len(e.Domain) < len(blockedBy) {
-				blockedBy = e.Domain
-			}
-		}
-	}
+	blockedBy := s.syncer.Lookup(domain)
 
 	res, err := dnstools.Query("", domain, "A")
 	if err != nil {

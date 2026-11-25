@@ -14,12 +14,23 @@ type Config struct {
 	UnboundControlBin string `json:"unbound_control_bin"`
 	UnboundConf       string `json:"unbound_conf"`
 	UnboundLogFile    string `json:"unbound_log_file"`
-	BlocklistFile     string `json:"blocklist_file"`
+	UnboundCheckconf  string `json:"unbound_checkconf_bin"`
 	ForwardZoneFile   string `json:"forward_zone_file"`
 	StaticEntryFile   string `json:"static_entry_file"`
-	PdftotextBin      string `json:"pdftotext_bin"`
 	AdminPassword     string `json:"admin_password"`
 	SessionSecret     string `json:"session_secret"`
+
+	// Blocklist DNS do ISP Tools.
+	ISPToolsToken         string `json:"isptools_token"`
+	ISPToolsAPIURL        string `json:"isptools_api_url"`
+	ISPToolsBlocklistFile string `json:"isptools_blocklist_file"`
+	ISPToolsSyncMinutes   int    `json:"isptools_sync_minutes"`
+	StateDir              string `json:"state_dir"`
+
+	// LegacyBlocklistFile is the old manually managed anatel-blocklist.conf
+	// (key kept as "blocklist_file" for existing installs). It is only read
+	// once, to migrate it away after the first successful API sync.
+	LegacyBlocklistFile string `json:"blocklist_file"`
 }
 
 func defaults() Config {
@@ -28,10 +39,16 @@ func defaults() Config {
 		UnboundControlBin: "/usr/sbin/unbound-control",
 		UnboundConf:       "/etc/unbound/unbound.conf",
 		UnboundLogFile:    "/var/log/unbound/unbound.log",
-		BlocklistFile:     "/etc/unbound/unbound.conf.d/anatel-blocklist.conf",
+		UnboundCheckconf:  "/usr/sbin/unbound-checkconf",
 		ForwardZoneFile:   "/etc/unbound/unbound.conf.d/forwardzone.conf",
 		StaticEntryFile:   "/etc/unbound/unbound.conf.d/staticentries.conf",
-		PdftotextBin:      "pdftotext",
+
+		ISPToolsAPIURL:        "https://isptools.gbti.net.br/api/v1/blocklist",
+		ISPToolsBlocklistFile: "/etc/unbound/unbound.conf.d/isptools-blocklist.conf",
+		ISPToolsSyncMinutes:   60,
+		StateDir:              "/var/lib/unbound-dash",
+
+		LegacyBlocklistFile: "/etc/unbound/unbound.conf.d/anatel-blocklist.conf",
 	}
 }
 

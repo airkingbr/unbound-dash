@@ -125,6 +125,7 @@ fi
 # unbound.conf (if not already included) and records its path under
 # json_key in config.json -- used to retrofit features added after a
 # server's first install without requiring a full reinstall.
+UNBOUND_CONF_CHANGED=0
 ensure_include() {
   file_name="$1"
   json_key="$2"
@@ -147,9 +148,16 @@ ensure_include() {
   if ! grep -q "$file_name" "$UNBOUND_CONF" 2>/dev/null; then
     cp "$UNBOUND_CONF" "${UNBOUND_CONF}.bak.$(date +%s)"
     printf '\ninclude: "%s"\n' "$value" >> "$UNBOUND_CONF"
+    UNBOUND_CONF_CHANGED=1
   fi
-  if [ -f "$CONFIG_PATH" ] && ! grep -q "\"${json_key}\"" "$CONFIG_PATH"; then
-    sed -i "s#\"blocklist_file\":#\"${json_key}\": \"${value}\",\n  \"blocklist_file\":#" "$CONFIG_PATH"
+  ensure_config_key "$json_key" "$value"
+}
+
+# ensure_config_key adds "key": "value" to config.json if the key is
+# missing (inserted before admin_password, which every install has).
+ensure_config_key() {
+  if [ -f "$CONFIG_PATH" ] && ! grep -q "\"$1\"" "$CONFIG_PATH"; then
+    sed -i "s#\"admin_password\":#\"$1\": \"$2\",\n  \"admin_password\":#" "$CONFIG_PATH"
   fi
 }
 
@@ -191,7 +199,19 @@ ${LOGFILE_PATH} {
 LOGROTATEOF
 fi
 
-unbound-control reload >/dev/null 2>&1 || true
+# Blocklist DNS do ISP Tools: substitui o antigo anatel-blocklist.conf
+# (o unbound-dash migra sozinho na primeira sincronizacao bem-sucedida).
+ensure_config_key "isptools_token" ""
+if [ -f "$CONFIG_PATH" ] && grep -q '"isptools_token": *""' "$CONFIG_PATH"; then
+  echo "==> ATENCAO: defina \"isptools_token\" em ${CONFIG_PATH} para ativar a blocklist DNS do ISP Tools"
+fi
+
+# Only reload when an include was actually added: reload flushes the whole
+# Unbound cache, which hurts a production resolver for nothing.
+if [ "$UNBOUND_CONF_CHANGED" = 1 ]; then
+  echo "==> unbound.conf alterado; recarregando o Unbound"
+  unbound-control reload >/dev/null 2>&1 || true
+fi
 
 CURRENT_VERSION="$("$BIN_PATH" -version 2>&1 || true)"
 NEW_VERSION="$("$TMP_FILE" -version 2>&1 || true)"

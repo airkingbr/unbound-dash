@@ -5,6 +5,10 @@
 # Usage:
 #   sudo ./install.sh [-v VERSION] [-f LOCAL_BINARY] [-p ADMIN_PASSWORD] [-l LISTEN_ADDR]
 #
+#   O token da Blocklist DNS do ISP Tools pode ser passado pela variavel
+#   ISPTOOLS_TOKEN (preferivel: nao fica no historico do shell) ou editado
+#   depois em /etc/unbound-dash/config.json ("isptools_token").
+#
 #   -v VERSION       Release tag to download (default: latest). Requires
 #                     GITHUB_TOKEN env var if the repo is private.
 #   -f LOCAL_BINARY  Use a local binary instead of downloading a release.
@@ -41,12 +45,6 @@ fi
 if ! command -v unbound-control >/dev/null 2>&1; then
   echo "unbound-control not found; is Unbound installed?" >&2
   exit 1
-fi
-
-if ! command -v pdftotext >/dev/null 2>&1; then
-  echo "==> Installing poppler-utils (pdftotext, usado para importar oficios em PDF)"
-  apt-get update -qq
-  apt-get install -y poppler-utils
 fi
 
 ARCH="$(dpkg --print-architecture)"
@@ -171,15 +169,8 @@ exec /usr/sbin/logrotate /etc/logrotate.d/unbound-dash
 EOF
 chmod 0755 /etc/cron.hourly/unbound-dash-logrotate
 
-echo "==> Setting up domain blocklist (anatel-blocklist.conf)"
-BLOCKLIST_FILE="${CONF_D}/anatel-blocklist.conf"
-if [ ! -f "$BLOCKLIST_FILE" ]; then
-  printf 'server:\n' > "$BLOCKLIST_FILE"
-fi
-if ! grep -q "anatel-blocklist.conf" "$UNBOUND_CONF" 2>/dev/null; then
-  cp "$UNBOUND_CONF" "${UNBOUND_CONF}.bak.$(date +%s)"
-  printf '\ninclude: "%s"\n' "$BLOCKLIST_FILE" >> "$UNBOUND_CONF"
-fi
+# The DNS blocklist (isptools-blocklist.conf) is created and included by
+# unbound-dash itself on the first successful sync with the ISP Tools API.
 
 echo "==> Setting up forward zones (forwardzone.conf)"
 FORWARDZONE_FILE="${CONF_D}/forwardzone.conf"
@@ -227,19 +218,24 @@ if [ -z "$ADMIN_PASSWORD" ]; then
   fi
 fi
 
+ISPTOOLS_TOKEN="${ISPTOOLS_TOKEN:-}"
+if [ -z "$ISPTOOLS_TOKEN" ] && [ -f "$CONFIG_PATH" ]; then
+  ISPTOOLS_TOKEN="$(grep -o '"isptools_token": *"[^"]*"' "$CONFIG_PATH" | sed -E 's/.*"([^"]*)"$/\1/' || true)"
+fi
+
 UNBOUND_CONTROL_BIN="$(command -v unbound-control)"
-PDFTOTEXT_BIN="$(command -v pdftotext || echo pdftotext)"
+UNBOUND_CHECKCONF_BIN="$(command -v unbound-checkconf || echo /usr/sbin/unbound-checkconf)"
 
 cat > "$CONFIG_PATH" <<EOF
 {
   "listen_addr": "${LISTEN_ADDR}",
   "unbound_control_bin": "${UNBOUND_CONTROL_BIN}",
+  "unbound_checkconf_bin": "${UNBOUND_CHECKCONF_BIN}",
   "unbound_conf": "${UNBOUND_CONF}",
   "unbound_log_file": "${UNBOUND_LOG_FILE}",
-  "blocklist_file": "${BLOCKLIST_FILE}",
   "forward_zone_file": "${FORWARDZONE_FILE}",
   "static_entry_file": "${STATICENTRY_FILE}",
-  "pdftotext_bin": "${PDFTOTEXT_BIN}",
+  "isptools_token": "${ISPTOOLS_TOKEN}",
   "admin_password": "${ADMIN_PASSWORD}"
 }
 EOF
@@ -284,3 +280,7 @@ echo "==> Done"
 echo "    unbound-dash is listening on ${LISTEN_ADDR}"
 echo "    config: ${CONFIG_PATH}"
 echo "    para atualizar: sudo update-unbound-dash"
+if [ -z "$ISPTOOLS_TOKEN" ]; then
+  echo "    ATENCAO: blocklist DNS desativada ate configurar \"isptools_token\" em ${CONFIG_PATH}"
+  echo "             (depois: systemctl restart unbound-dash)"
+fi
