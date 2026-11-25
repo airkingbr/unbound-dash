@@ -34,14 +34,33 @@ Em um Debian que já roda Unbound:
 curl -fsSL https://raw.githubusercontent.com/airkingbr/unbound-dash/main/scripts/install.sh | sudo bash
 ```
 
-O instalador:
+O instalador faz as perguntas logo no início e depois segue sozinho:
 
-1. Baixa o binário da última release (defina `GITHUB_TOKEN` se o repositório for privado, ou use `-f BINARIO_LOCAL`)
-2. Verifica se o `remote-control` do Unbound está habilitado; se não estiver, habilita (com backup do `unbound.conf`)
-3. Gera `/etc/unbound-dash/config.json` (com senha de admin, gerada automaticamente se não informada via `-p`)
-4. Instala e inicia o serviço systemd `unbound-dash`
+1. **Senha de admin do painel**: digite uma ou deixe em branco para gerar uma aleatória.
+2. **Blocklist DNS (ISP Tools)**: pergunta se você tem um token da API.
+   - Se tiver, o token é validado na hora (`/versao`). Ele avisa se o token é
+     inválido/revogado (401), se o IP do servidor não está liberado (403,
+     mostrando o IP a liberar) ou se não há acesso à API.
+   - Se **não** tiver, a instalação continua normalmente, só que **sem aplicar
+     bloqueios**. Para ativar depois, coloque o token em `"isptools_token"` no
+     `/etc/unbound-dash/config.json` e rode `systemctl restart unbound-dash`.
+3. Baixa o binário da última release (ou usa `-f BINARIO_LOCAL`).
+4. Verifica se o `remote-control` do Unbound está habilitado; se não estiver, habilita (com backup do `unbound.conf`).
+5. Gera `/etc/unbound-dash/config.json` (permissão 600), instala e (re)inicia o serviço systemd `unbound-dash`.
+6. Com token, espera a primeira sincronização da blocklist e mostra um resumo
+   com o endereço do painel, a senha gerada e a situação da blocklist.
 
 Por padrão a interface fica disponível em `http://SEU_SERVIDOR:8080`.
+
+Instalação não interativa (sem terminal), já com o token:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/airkingbr/unbound-dash/main/scripts/install.sh | sudo ISPTOOLS_TOKEN="isptbl_..." bash
+```
+
+Use `ISPTOOLS_TOKEN=nenhum` para instalar sem blocklist sem que ele pergunte.
+Rodar o instalador de novo num servidor já instalado mantém a senha e o token
+configurados.
 
 O instalador também habilita `log-queries: yes` no Unbound (necessário para
 as abas de Top consultas/clientes) e configura rotação do log
